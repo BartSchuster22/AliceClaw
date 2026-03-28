@@ -12,22 +12,22 @@ import {
 
 import type { BillingEventEmitter } from './emitter.js';
 
-let provisionQueue: Queue | null = null;
+async function enqueueProvisionInstanceJob(payload: {
+  subscriptionId: string;
+  vpsInstanceId: string;
+  jobId: string;
+}) {
+  const queue = new Queue('provision-instance', {
+    connection: {
+      url: process.env.REDIS_URL ?? 'redis://redis:6379',
+    },
+  });
 
-function getProvisionQueue() {
-  if (!provisionQueue) {
-    provisionQueue = new Queue('provision-instance', {
-      connection: {
-        url: process.env.REDIS_URL ?? 'redis://redis:6379',
-      },
-    });
-
-    provisionQueue.on('error', (error) => {
-      console.error('[billing] BullMQ queue error:', error.message);
-    });
+  try {
+    await queue.add('provision-instance', payload);
+  } finally {
+    await queue.close();
   }
-
-  return provisionQueue;
 }
 
 export function registerBillingHandlers(eventEmitter: BillingEventEmitter) {
@@ -100,7 +100,7 @@ export function registerBillingHandlers(eventEmitter: BillingEventEmitter) {
       .returning();
 
     try {
-      await getProvisionQueue().add('provision-instance', {
+      await enqueueProvisionInstanceJob({
         subscriptionId: subscription.id,
         vpsInstanceId: vpsInstance.id,
         jobId: job.id,
