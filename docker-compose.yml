@@ -111,7 +111,7 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/worker
-    command: sh -c "pnpm dev"
+    command: sh -lc "cd /workspace && pnpm install --no-frozen-lockfile && cd /workspace/apps/worker && pnpm dev"
     stdin_open: true
     tty: true
     environment:
