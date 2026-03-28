@@ -83,6 +83,7 @@ services:
       CI: "true"
       PORT: 4000
       HOST: 0.0.0.0
+      JWT_SECRET: dev_jwt_secret_change_me
       DATABASE_URL: postgres://openclaw:dev_password@postgres:5432/openclaw
       REDIS_URL: redis://redis:6379
     expose:
