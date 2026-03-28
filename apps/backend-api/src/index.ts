@@ -4,6 +4,7 @@ import cors from '@fastify/cors';
 import { registerAuthModule, requireAuth } from './auth.js';
 import { registerAdminAuthModule, requireAdmin, requireAdminRole } from './admin-auth.js';
 import { billingEventEmitter, registerBillingHandlers, registerBillingRoutes } from './modules/billing/index.js';
+import { registerProductRoutes } from './modules/products/index.js';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
@@ -27,6 +28,7 @@ registerBillingHandlers(billingEventEmitter);
 await registerAuthModule(app);
 await registerAdminAuthModule(app);
 await registerBillingRoutes(app);
+await registerProductRoutes(app);
 
 app.get('/health', async () => ({
   status: 'ok',
