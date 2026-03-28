@@ -5,6 +5,8 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? 'postgres://openclaw:dev_password@localhost:5432/openclaw',
+    url: process.env.DATABASE_URL ?? 'postgres://openclaw:dev_password@postgres:5432/openclaw',
   },
+  verbose: true,
+  strict: true,
 });
