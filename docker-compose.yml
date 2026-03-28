@@ -22,8 +22,8 @@ services:
     command: sh -c "pnpm dev"
     stdin_open: true
     tty: true
-    ports:
-      - "3000:5173"
+    expose:
+      - "5173"
     environment:
       CI: "true"
     volumes:
@@ -41,8 +41,8 @@ services:
     command: sh -c "pnpm dev"
     stdin_open: true
     tty: true
-    ports:
-      - "3001:5173"
+    expose:
+      - "5173"
     environment:
       CI: "true"
     volumes:
@@ -60,8 +60,8 @@ services:
     command: sh -c "pnpm dev"
     stdin_open: true
     tty: true
-    ports:
-      - "3002:5173"
+    expose:
+      - "5173"
     environment:
       CI: "true"
     volumes:
@@ -85,8 +85,8 @@ services:
       HOST: 0.0.0.0
       DATABASE_URL: postgres://openclaw:dev_password@postgres:5432/openclaw
       REDIS_URL: redis://redis:6379
-    ports:
-      - "4000:4000"
+    expose:
+      - "4000"
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:4000/health"]
       interval: 15s
