@@ -19,13 +19,14 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/frontend-web
-    command: sh -c "pnpm dev"
+    command: sh -lc "pnpm install --no-frozen-lockfile && pnpm dev"
     stdin_open: true
     tty: true
     expose:
       - "5173"
     environment:
       CI: "true"
+      VITE_API_URL: https://api.canariaslibre.com
     volumes:
       - .:/workspace
       - frontend_web_node_modules:/workspace/node_modules
