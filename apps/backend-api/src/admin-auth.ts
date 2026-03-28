@@ -55,12 +55,17 @@ function verifyAdminToken(token: string) {
   return jwt.verify(token, getJwtSecret()) as AuthenticatedAdmin;
 }
 
+function getCookieDomain() {
+  return process.env.COOKIE_DOMAIN ?? '.canariaslibre.com';
+}
+
 function setAdminRefreshTokenCookie(reply: FastifyReply, token: string) {
   reply.setCookie(ADMIN_REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: true,
     sameSite: 'strict',
     path: '/',
+    domain: getCookieDomain(),
     maxAge: 60 * 60 * 24 * 30,
   });
 }
@@ -71,6 +76,7 @@ function clearAdminRefreshTokenCookie(reply: FastifyReply) {
     httpOnly: true,
     secure: true,
     sameSite: 'strict',
+    domain: getCookieDomain(),
   });
 }
 

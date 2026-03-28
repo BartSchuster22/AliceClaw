@@ -86,6 +86,7 @@ services:
       PORT: 4000
       HOST: 0.0.0.0
       JWT_SECRET: dev_jwt_secret_change_me
+      COOKIE_DOMAIN: .canariaslibre.com
       DATABASE_URL: postgres://openclaw:dev_password@postgres:5432/openclaw
       REDIS_URL: redis://redis:6379
     expose:

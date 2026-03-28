@@ -55,12 +55,17 @@ function verifyToken(token: string): TokenPayload {
   return jwt.verify(token, getJwtSecret()) as TokenPayload;
 }
 
+function getCookieDomain() {
+  return process.env.COOKIE_DOMAIN ?? '.canariaslibre.com';
+}
+
 function setRefreshTokenCookie(reply: FastifyReply, token: string) {
   reply.setCookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: true,
     sameSite: 'strict',
     path: '/',
+    domain: getCookieDomain(),
     maxAge: 60 * 60 * 24 * 30,
   });
 }
@@ -71,6 +76,7 @@ function clearRefreshTokenCookie(reply: FastifyReply) {
     httpOnly: true,
     secure: true,
     sameSite: 'strict',
+    domain: getCookieDomain(),
   });
 }
 
