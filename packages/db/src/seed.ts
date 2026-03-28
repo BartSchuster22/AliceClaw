@@ -80,8 +80,13 @@ async function main() {
     .onConflictDoUpdate({
       target: products.slug,
       set: {
-        description: 'Updated seed product',
-        active: true,
+        name: sql`excluded.name`,
+        description: sql`excluded.description`,
+        priceCents: sql`excluded.price_cents`,
+        billingCycle: sql`excluded.billing_cycle`,
+        vpsSpec: sql`excluded.vps_spec`,
+        provisioningTemplateId: sql`excluded.provisioning_template_id`,
+        active: sql`excluded.active`,
       },
     });
 
