@@ -134,63 +134,61 @@ async function main() {
       },
     });
 
-  await db
-    .insert(cmsContent)
-    .values([
-      {
-        key: 'hero_headline',
-        value: 'Deploy your OpenClaw instance in minutes.',
-        updatedAt: new Date(),
+  const cmsUpdatedAt = new Date();
+  const cmsRows = [
+    {
+      key: 'hero_headline' as const,
+      value: 'Deploy your OpenClaw instance in minutes.',
+    },
+    {
+      key: 'hero_subheadline' as const,
+      value: 'Hosted PSI for private users and small businesses.',
+    },
+    {
+      key: 'hero_cta_text' as const,
+      value: 'Get started',
+    },
+    {
+      key: 'product_card_footer_note' as const,
+      value: 'Simple monthly pricing on Hetzner-backed infrastructure.',
+    },
+    {
+      key: 'faq_entries' as const,
+      value: JSON.stringify([
+        {
+          q: 'What is a PSI?',
+          a: 'A prefabricated software instance with OpenClaw pre-installed.',
+        },
+        {
+          q: 'Can I use my own SSH key?',
+          a: 'Yes, you can provide one during onboarding.',
+        },
+      ]),
+    },
+    {
+      key: 'footer_tagline' as const,
+      value: 'OpenClaw hosting without installation pain.',
+    },
+  ];
+
+  for (const row of cmsRows) {
+    await db
+      .insert(cmsContent)
+      .values({
+        key: row.key,
+        value: row.value,
+        updatedAt: cmsUpdatedAt,
         updatedByAdminId: adminUser.id,
-      },
-      {
-        key: 'hero_subheadline',
-        value: 'Hosted PSI for private users and small businesses.',
-        updatedAt: new Date(),
-        updatedByAdminId: adminUser.id,
-      },
-      {
-        key: 'hero_cta_text',
-        value: 'Get started',
-        updatedAt: new Date(),
-        updatedByAdminId: adminUser.id,
-      },
-      {
-        key: 'product_card_footer_note',
-        value: 'Simple monthly pricing on Hetzner-backed infrastructure.',
-        updatedAt: new Date(),
-        updatedByAdminId: adminUser.id,
-      },
-      {
-        key: 'faq_entries',
-        value: JSON.stringify([
-          {
-            q: 'What is a PSI?',
-            a: 'A prefabricated software instance with OpenClaw pre-installed.',
-          },
-          {
-            q: 'Can I use my own SSH key?',
-            a: 'Yes, you can provide one during onboarding.',
-          },
-        ]),
-        updatedAt: new Date(),
-        updatedByAdminId: adminUser.id,
-      },
-      {
-        key: 'footer_tagline',
-        value: 'OpenClaw hosting without installation pain.',
-        updatedAt: new Date(),
-        updatedByAdminId: adminUser.id,
-      },
-    ])
-    .onConflictDoUpdate({
-      target: cmsContent.key,
-      set: {
-        value: sql`excluded.value`,
-        updatedAt: sql`excluded.updated_at`,
-        updatedByAdminId: sql`excluded.updated_by_admin_id`,
-      },
-    });
+      })
+      .onConflictDoUpdate({
+        target: cmsContent.key,
+        set: {
+          value: row.value,
+          updatedAt: cmsUpdatedAt,
+          updatedByAdminId: adminUser.id,
+        },
+      });
+  }
 
   await db
     .insert(referralSettings)
