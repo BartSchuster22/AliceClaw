@@ -25,7 +25,8 @@ const loginSchema = z.object({
   password: z.string().min(1),
 });
 
-type TokenPayload = AuthenticatedUser;
+type AccessTokenPayload = AuthenticatedUser & { tokenType: 'access' };
+type RefreshTokenPayload = AuthenticatedUser & { tokenType: 'refresh' };
 
 declare module 'fastify' {
   interface FastifyRequest {
@@ -43,16 +44,30 @@ function getJwtSecret() {
   return secret;
 }
 
-function signAccessToken(payload: TokenPayload) {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: ACCESS_TOKEN_EXPIRES_IN });
+function signAccessToken(payload: AuthenticatedUser) {
+  const tokenPayload: AccessTokenPayload = { ...payload, tokenType: 'access' };
+  return jwt.sign(tokenPayload, getJwtSecret(), { expiresIn: ACCESS_TOKEN_EXPIRES_IN });
 }
 
-function signRefreshToken(payload: TokenPayload) {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
+function signRefreshToken(payload: AuthenticatedUser) {
+  const tokenPayload: RefreshTokenPayload = { ...payload, tokenType: 'refresh' };
+  return jwt.sign(tokenPayload, getJwtSecret(), { expiresIn: REFRESH_TOKEN_EXPIRES_IN });
 }
 
-function verifyToken(token: string): TokenPayload {
-  return jwt.verify(token, getJwtSecret()) as TokenPayload;
+function verifyAccessToken(token: string): AuthenticatedUser {
+  const payload = jwt.verify(token, getJwtSecret()) as AccessTokenPayload;
+  if (payload.tokenType !== 'access') {
+    throw new Error('Invalid access token');
+  }
+  return { sub: payload.sub, email: payload.email, role: payload.role };
+}
+
+function verifyRefreshToken(token: string): AuthenticatedUser {
+  const payload = jwt.verify(token, getJwtSecret()) as RefreshTokenPayload;
+  if (payload.tokenType !== 'refresh') {
+    throw new Error('Invalid refresh token');
+  }
+  return { sub: payload.sub, email: payload.email, role: payload.role };
 }
 
 function getCookieDomain() {
@@ -120,7 +135,7 @@ export async function requireAuth(request: FastifyRequest, reply: FastifyReply) 
     }
 
     const token = authHeader.slice('Bearer '.length);
-    request.user = verifyToken(token);
+    request.user = verifyAccessToken(token);
   } catch {
     return reply.status(401).send({ error: 'Unauthorized' });
   }
@@ -245,7 +260,7 @@ export async function registerAuthModule(app: FastifyInstance) {
     }
 
     try {
-      const payload = verifyToken(refreshToken);
+      const payload = verifyRefreshToken(refreshToken);
       const accessToken = signAccessToken(payload);
 
       return reply.send({ accessToken });
