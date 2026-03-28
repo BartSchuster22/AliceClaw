@@ -2,20 +2,24 @@ export type BillingEvent =
   | {
       type: 'subscription.activated';
       subscriptionId: string;
+      billingProviderSubscriptionId: string;
       userId: string;
       productId: string;
     }
   | {
       type: 'subscription.renewed';
       subscriptionId: string;
+      billingProviderSubscriptionId: string;
     }
   | {
       type: 'subscription.payment_failed';
       subscriptionId: string;
+      billingProviderSubscriptionId: string;
     }
   | {
       type: 'subscription.cancelled';
       subscriptionId: string;
+      billingProviderSubscriptionId: string;
     }
   | {
       type: 'subscription.grace_period_ended';
@@ -36,4 +40,4 @@ export interface BillingProvider {
 
 export type BillingEventHandler<TType extends BillingEvent['type']> = (
   event: Extract<BillingEvent, { type: TType }>,
-) => void;
+) => void | Promise<void>;

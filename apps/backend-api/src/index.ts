@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 
 import { registerAuthModule, requireAuth } from './auth.js';
 import { registerAdminAuthModule, requireAdmin, requireAdminRole } from './admin-auth.js';
-import { registerBillingRoutes } from './modules/billing/index.js';
+import { billingEventEmitter, registerBillingHandlers, registerBillingRoutes } from './modules/billing/index.js';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
@@ -21,6 +21,8 @@ await app.register(cors, {
   origin: true,
   credentials: true,
 });
+
+registerBillingHandlers(billingEventEmitter);
 
 await registerAuthModule(app);
 await registerAdminAuthModule(app);

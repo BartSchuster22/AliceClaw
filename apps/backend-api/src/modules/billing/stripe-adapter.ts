@@ -1,6 +1,9 @@
 import Stripe from 'stripe';
+import { randomUUID } from 'node:crypto';
+import { eq } from 'drizzle-orm';
+
 import { db } from '@psi/db';
-import { billingEventsLog, subscriptions } from '@psi/db/schema';
+import { billingEventsLog, products, subscriptions } from '@psi/db/schema';
 
 import type { BillingEvent, BillingProvider } from './types.js';
 import { BillingEventEmitter } from './emitter.js';
@@ -42,6 +45,11 @@ export class StripeAdapter implements BillingProvider {
     referralCodeUsed?: string;
   }): Promise<{ url: string; sessionId: string }> {
     const stripe = getStripeClient();
+    const [product] = await db.select().from(products).where(eq(products.id, params.productId)).limit(1);
+
+    if (!product) {
+      throw new Error('Product not found');
+    }
 
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
@@ -52,7 +60,22 @@ export class StripeAdapter implements BillingProvider {
         productId: params.productId,
         referralCodeUsed: params.referralCodeUsed ?? '',
       },
-      line_items: [],
+      line_items: [
+        {
+          price_data: {
+            currency: 'eur',
+            product_data: {
+              name: product.name,
+              description: product.description,
+            },
+            recurring: {
+              interval: product.billingCycle === 'annual' ? 'year' : 'month',
+            },
+            unit_amount: product.priceCents,
+          },
+          quantity: 1,
+        },
+      ],
     });
 
     if (!session.url) {
@@ -88,18 +111,16 @@ export class StripeAdapter implements BillingProvider {
 
     const normalizedEvent = await this.mapStripeEvent(event);
 
-    const subscriptionId = this.extractSubscriptionId(event);
-
-    await db.insert(billingEventsLog).values({
-      subscriptionId,
-      eventType: event.type,
-      provider: 'stripe',
-      providerEventId: event.id,
-      payload: event as unknown as Record<string, unknown>,
-      processedAt: new Date(),
-    });
-
     if (normalizedEvent) {
+      await db.insert(billingEventsLog).values({
+        subscriptionId: normalizedEvent.subscriptionId,
+        eventType: event.type,
+        provider: 'stripe',
+        providerEventId: event.id,
+        payload: event as unknown as Record<string, unknown>,
+        processedAt: new Date(),
+      });
+
       queueMicrotask(() => {
         this.eventEmitter.emit(normalizedEvent);
       });
@@ -110,17 +131,26 @@ export class StripeAdapter implements BillingProvider {
     switch (event.type) {
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        const subscriptionId = String(session.subscription ?? '');
+        const billingProviderSubscriptionId = String(session.subscription ?? '');
         const userId = session.metadata?.userId;
         const productId = session.metadata?.productId;
 
-        if (!subscriptionId || !userId || !productId) {
+        if (!billingProviderSubscriptionId || !userId || !productId) {
           return null;
         }
+
+        const [existingSubscription] = await db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(eq(subscriptions.billingProviderSubscriptionId, billingProviderSubscriptionId))
+          .limit(1);
+
+        const subscriptionId = existingSubscription?.id ?? randomUUID();
 
         return {
           type: 'subscription.activated',
           subscriptionId,
+          billingProviderSubscriptionId,
           userId,
           productId,
         };
@@ -133,69 +163,80 @@ export class StripeAdapter implements BillingProvider {
           return null;
         }
 
-        const subscriptionId = typeof invoice.subscription === 'string'
+        const billingProviderSubscriptionId = typeof invoice.subscription === 'string'
           ? invoice.subscription
           : invoice.subscription?.id;
 
-        if (!subscriptionId) {
+        if (!billingProviderSubscriptionId) {
+          return null;
+        }
+
+        const [subscription] = await db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(eq(subscriptions.billingProviderSubscriptionId, billingProviderSubscriptionId))
+          .limit(1);
+
+        if (!subscription) {
           return null;
         }
 
         return {
           type: 'subscription.renewed',
-          subscriptionId,
+          subscriptionId: subscription.id,
+          billingProviderSubscriptionId,
         };
       }
 
       case 'invoice.payment_failed': {
         const invoice = event.data.object as Stripe.Invoice;
-        const subscriptionId = typeof invoice.subscription === 'string'
+        const billingProviderSubscriptionId = typeof invoice.subscription === 'string'
           ? invoice.subscription
           : invoice.subscription?.id;
 
-        if (!subscriptionId) {
+        if (!billingProviderSubscriptionId) {
+          return null;
+        }
+
+        const [subscription] = await db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(eq(subscriptions.billingProviderSubscriptionId, billingProviderSubscriptionId))
+          .limit(1);
+
+        if (!subscription) {
           return null;
         }
 
         return {
           type: 'subscription.payment_failed',
-          subscriptionId,
+          subscriptionId: subscription.id,
+          billingProviderSubscriptionId,
         };
       }
 
       case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
+        const stripeSubscription = event.data.object as Stripe.Subscription;
+        const billingProviderSubscriptionId = stripeSubscription.id;
+        const [subscription] = await db
+          .select({ id: subscriptions.id })
+          .from(subscriptions)
+          .where(eq(subscriptions.billingProviderSubscriptionId, billingProviderSubscriptionId))
+          .limit(1);
+
+        if (!subscription) {
+          return null;
+        }
 
         return {
           type: 'subscription.cancelled',
           subscriptionId: subscription.id,
+          billingProviderSubscriptionId,
         };
       }
 
       default:
         return null;
-    }
-  }
-
-  private extractSubscriptionId(event: Stripe.Event): string {
-    switch (event.type) {
-      case 'checkout.session.completed': {
-        const session = event.data.object as Stripe.Checkout.Session;
-        return String(session.subscription ?? 'unknown');
-      }
-      case 'invoice.paid':
-      case 'invoice.payment_failed': {
-        const invoice = event.data.object as Stripe.Invoice;
-        return typeof invoice.subscription === 'string'
-          ? invoice.subscription
-          : invoice.subscription?.id ?? 'unknown';
-      }
-      case 'customer.subscription.deleted': {
-        const subscription = event.data.object as Stripe.Subscription;
-        return subscription.id;
-      }
-      default:
-        return 'unknown';
     }
   }
 }
