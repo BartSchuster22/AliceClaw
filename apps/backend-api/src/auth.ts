@@ -2,13 +2,8 @@ import cookie from '@fastify/cookie';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { eq } from 'drizzle-orm';
 import { db } from '@psi/db';
-import {
-  profiles,
-  referrals,
-  users,
-} from '@psi/db/schema';
+import { profiles, referrals, users } from '@psi/db/schema';
 import { z } from 'zod';
 
 import type { AuthenticatedUser } from './types.js';
@@ -79,13 +74,30 @@ function clearRefreshTokenCookie(reply: FastifyReply) {
   });
 }
 
+async function findUserByEmail(email: string) {
+  return db.$client<{ id: string; email: string; password_hash: string; referral_code: string }[]>`
+    select id, email, password_hash, referral_code
+    from users
+    where email = ${email}
+    limit 1
+  `;
+}
+
+async function findUserIdByReferralCode(referralCode: string) {
+  return db.$client<{ id: string }[]>`
+    select id
+    from users
+    where referral_code = ${referralCode}
+    limit 1
+  `;
+}
+
 async function generateReferralCode() {
   const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
 
   while (true) {
     const code = Array.from({ length: 8 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
-
-    const existing = await db.select({ id: users.id }).from(users).where(eq(users.referralCode, code)).limit(1);
+    const existing = await findUserIdByReferralCode(code);
 
     if (existing.length === 0) {
       return code;
@@ -119,8 +131,7 @@ export async function registerAuthModule(app: FastifyInstance) {
     }
 
     const { email, password, full_name, referral_code_used } = parsed.data;
-
-    const existingUser = await db.select({ id: users.id }).from(users).where(eq(users.email, email)).limit(1);
+    const existingUser = await findUserByEmail(email);
 
     if (existingUser.length > 0) {
       return reply.status(409).send({ error: 'Email already registered' });
@@ -129,11 +140,7 @@ export async function registerAuthModule(app: FastifyInstance) {
     let referringUserId: string | null = null;
 
     if (referral_code_used) {
-      const referringUser = await db
-        .select({ id: users.id })
-        .from(users)
-        .where(eq(users.referralCode, referral_code_used))
-        .limit(1);
+      const referringUser = await findUserIdByReferralCode(referral_code_used);
 
       if (referringUser.length > 0) {
         referringUserId = referringUser[0].id;
@@ -197,15 +204,14 @@ export async function registerAuthModule(app: FastifyInstance) {
     }
 
     const { email, password } = parsed.data;
-
-    const foundUsers = await db.select().from(users).where(eq(users.email, email)).limit(1);
+    const foundUsers = await findUserByEmail(email);
     const user = foundUsers[0];
 
     if (!user) {
       return reply.status(401).send({ error: 'Invalid credentials' });
     }
 
-    const isValidPassword = await bcrypt.compare(password, user.passwordHash);
+    const isValidPassword = await bcrypt.compare(password, user.password_hash);
 
     if (!isValidPassword) {
       return reply.status(401).send({ error: 'Invalid credentials' });
@@ -245,9 +251,5 @@ export async function registerAuthModule(app: FastifyInstance) {
   app.post('/auth/logout', async (_request, reply) => {
     clearRefreshTokenCookie(reply);
     return reply.status(204).send();
-  });
-
-  app.get('/auth/me', { preHandler: requireAuth }, async (request) => {
-    return { user: request.user };
   });
 }
