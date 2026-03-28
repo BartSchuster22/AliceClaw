@@ -86,6 +86,16 @@ export async function registerUserRoutes(app: FastifyInstance) {
           country: input.country,
         })
         .where(eq(profiles.id, existingProfile.id));
+    } else {
+      await db.insert(profiles).values({
+        userId: request.user.sub,
+        accountType: 'private',
+        companyName: input.company_name ?? null,
+        taxId: null,
+        phone: input.phone ?? null,
+        country: input.country ?? 'XX',
+        onboardingState: 'pending',
+      });
     }
 
     const [updated] = await db
