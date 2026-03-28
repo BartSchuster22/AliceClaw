@@ -7,6 +7,7 @@ import { billingEventEmitter, registerBillingHandlers, registerBillingRoutes } f
 import { registerProductRoutes } from './modules/products/index.js';
 import { registerCmsRoutes } from './modules/cms/index.js';
 import { registerOrderRoutes } from './modules/orders/index.js';
+import { registerOnboardingRoutes } from './modules/onboarding/index.js';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
@@ -33,6 +34,7 @@ await registerBillingRoutes(app);
 await registerProductRoutes(app);
 await registerCmsRoutes(app);
 await registerOrderRoutes(app);
+await registerOnboardingRoutes(app);
 
 app.get('/health', async () => ({
   status: 'ok',
