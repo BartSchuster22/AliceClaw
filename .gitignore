@@ -1,0 +1,13 @@
+node_modules
+.pnpm-store
+.env
+.env.*
+dist
+build
+coverage
+*.log
+apps/*/node_modules
+packages/*/node_modules
+apps/*/dist
+packages/*/dist
+postgres-data
