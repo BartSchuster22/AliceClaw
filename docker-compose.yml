@@ -4,9 +4,11 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/frontend-web
-    command: sh -c "pnpm install && pnpm dev"
+    command: pnpm dev
     ports:
       - "3000:3000"
+    environment:
+      CI: "true"
     volumes:
       - .:/workspace
       - frontend_web_node_modules:/workspace/node_modules
@@ -19,9 +21,11 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/frontend-app
-    command: sh -c "pnpm install && pnpm dev"
+    command: pnpm dev
     ports:
       - "3001:3001"
+    environment:
+      CI: "true"
     volumes:
       - .:/workspace
       - frontend_app_node_modules:/workspace/node_modules
@@ -34,9 +38,11 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/frontend-admin
-    command: sh -c "pnpm install && pnpm dev"
+    command: pnpm dev
     ports:
       - "3002:3002"
+    environment:
+      CI: "true"
     volumes:
       - .:/workspace
       - frontend_admin_node_modules:/workspace/node_modules
@@ -49,8 +55,9 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/backend-api
-    command: sh -c "pnpm install && pnpm dev"
+    command: pnpm dev
     environment:
+      CI: "true"
       PORT: 4000
       HOST: 0.0.0.0
       DATABASE_URL: postgres://openclaw:dev_password@postgres:5432/openclaw
@@ -70,8 +77,9 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/worker
-    command: sh -c "pnpm install && pnpm dev"
+    command: pnpm dev
     environment:
+      CI: "true"
       DATABASE_URL: postgres://openclaw:dev_password@postgres:5432/openclaw
       REDIS_URL: redis://redis:6379
     volumes:
