@@ -18,10 +18,6 @@ const app = Fastify({ logger: true });
 const port = Number(process.env.PORT ?? 4000);
 const host = process.env.HOST ?? '0.0.0.0';
 
-app.addContentTypeParser('*', { parseAs: 'buffer' }, (_request, payload, done) => {
-  done(null, payload);
-});
-
 await app.register(cors, {
   origin: true,
   credentials: true,

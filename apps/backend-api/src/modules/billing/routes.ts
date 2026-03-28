@@ -3,6 +3,20 @@ import type { FastifyInstance } from 'fastify';
 import { stripeAdapter } from './stripe-adapter.js';
 
 export async function registerBillingRoutes(app: FastifyInstance) {
+  app.addContentTypeParser('application/json', { parseAs: 'buffer' }, (request, payload, done) => {
+    if (request.url === '/billing/webhook') {
+      done(null, payload);
+      return;
+    }
+
+    try {
+      const text = payload.toString('utf8');
+      done(null, text ? JSON.parse(text) : {});
+    } catch (error) {
+      done(error as Error, undefined);
+    }
+  });
+
   app.post('/billing/webhook', async (request, reply) => {
     const signature = request.headers['stripe-signature'];
 
