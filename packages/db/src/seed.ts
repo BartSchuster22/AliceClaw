@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import bcrypt from 'bcryptjs';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
@@ -19,8 +19,9 @@ const connectionString =
 const sql = postgres(connectionString, { max: 1 });
 const db = drizzle(sql);
 
-const hashPassword = (password: string) =>
-  createHash('sha256').update(password).digest('hex');
+async function hashPassword(password: string) {
+  return bcrypt.hash(password, 12);
+}
 
 async function main() {
   const [adminUser] = await db

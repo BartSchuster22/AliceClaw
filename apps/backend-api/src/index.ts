@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import cors from '@fastify/cors';
 
-import { registerAuthModule } from './auth.js';
+import { registerAuthModule, requireAuth } from './auth.js';
 
 const app = Fastify({ logger: true });
 const port = Number(process.env.PORT ?? 4000);
@@ -15,6 +15,11 @@ await app.register(cors, {
 await registerAuthModule(app);
 
 app.get('/health', async () => ({
+  status: 'ok',
+  timestamp: new Date().toISOString(),
+}));
+
+app.get('/health/auth', { preHandler: requireAuth }, async () => ({
   status: 'ok',
   timestamp: new Date().toISOString(),
 }));
