@@ -276,6 +276,7 @@ function CheckoutPage() {
   const registerMutation = useMutation({
     mutationFn: registerUser,
     onSuccess: (data) => {
+      sessionStorage.setItem('access_token', data.accessToken);
       setAccessToken(data.accessToken);
       setError(null);
       setStep(2);
@@ -288,6 +289,7 @@ function CheckoutPage() {
   const loginMutation = useMutation({
     mutationFn: loginUser,
     onSuccess: (data) => {
+      sessionStorage.setItem('access_token', data.accessToken);
       setAccessToken(data.accessToken);
       setError(null);
       setStep(2);
