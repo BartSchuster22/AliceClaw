@@ -1,8 +1,16 @@
-import { useEffect } from 'react';
-import { Link, Route, Routes, useLocation } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, Route, Routes, useLocation, useSearchParams } from 'react-router-dom';
+import { useMutation, useQuery } from '@tanstack/react-query';
 
-import { getProduct, getProducts, getPublicCms, type Product } from './lib/api';
+import {
+  createOrder,
+  getProduct,
+  getProducts,
+  getPublicCms,
+  loginUser,
+  registerUser,
+  type Product,
+} from './lib/api';
 
 function formatPrice(priceCents: number, billingCycle: string) {
   const amount = new Intl.NumberFormat('en-IE', {
@@ -20,6 +28,10 @@ function storeReferralCodeFromUrl(search: string) {
   if (ref) {
     sessionStorage.setItem('referral_code', ref);
   }
+}
+
+function getReferralCode() {
+  return sessionStorage.getItem('referral_code') ?? undefined;
 }
 
 function AppShell({ children }: { children: React.ReactNode }) {
@@ -245,6 +257,223 @@ function ProductPage() {
   );
 }
 
+function CheckoutPage() {
+  const [searchParams] = useSearchParams();
+  const productId = searchParams.get('product_id') ?? '';
+  const referralCode = getReferralCode();
+  const [mode, setMode] = useState<'signin' | 'create'>('create');
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [form, setForm] = useState({ email: '', password: '', fullName: '' });
+  const [error, setError] = useState<string | null>(null);
+
+  const productsQuery = useQuery({ queryKey: ['products'], queryFn: getProducts });
+  const product = useMemo(
+    () => (productsQuery.data ?? []).find((item) => item.id === productId),
+    [productsQuery.data, productId],
+  );
+
+  const registerMutation = useMutation({
+    mutationFn: registerUser,
+    onSuccess: (data) => {
+      setAccessToken(data.accessToken);
+      setError(null);
+      setStep(2);
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : 'Registration failed');
+    },
+  });
+
+  const loginMutation = useMutation({
+    mutationFn: loginUser,
+    onSuccess: (data) => {
+      setAccessToken(data.accessToken);
+      setError(null);
+      setStep(2);
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : 'Login failed');
+    },
+  });
+
+  const orderMutation = useMutation({
+    mutationFn: async () => {
+      if (!accessToken || !productId) {
+        throw new Error('Missing product or auth state');
+      }
+
+      return createOrder({ productId, referralCodeUsed: referralCode }, accessToken);
+    },
+    onSuccess: (data) => {
+      setStep(3);
+      window.location.href = data.checkoutUrl;
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : 'Checkout failed');
+    },
+  });
+
+  const submitAccountStep = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+
+    if (mode === 'create') {
+      await registerMutation.mutateAsync({
+        email: form.email,
+        password: form.password,
+        full_name: form.fullName,
+        referral_code_used: referralCode,
+      });
+      return;
+    }
+
+    await loginMutation.mutateAsync({
+      email: form.email,
+      password: form.password,
+    });
+  };
+
+  return (
+    <AppShell>
+      <main className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mb-10">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-400">Checkout</p>
+          <h1 className="mt-4 text-4xl font-bold tracking-tight text-white">Get your PSI live</h1>
+        </div>
+
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            {step === 1 ? (
+              <form className="space-y-4" onSubmit={submitAccountStep}>
+                <div className="flex gap-2 rounded-lg bg-slate-800 p-1 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setMode('create')}
+                    className={`flex-1 rounded-md px-3 py-2 ${mode === 'create' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}
+                  >
+                    Create account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('signin')}
+                    className={`flex-1 rounded-md px-3 py-2 ${mode === 'signin' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}
+                  >
+                    Sign in
+                  </button>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300">Email</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300">Password</label>
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                    minLength={8}
+                    required
+                  />
+                </div>
+
+                {mode === 'create' ? (
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-300">Full name</label>
+                    <input
+                      type="text"
+                      value={form.fullName}
+                      onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                      required
+                    />
+                  </div>
+                ) : null}
+
+                {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+
+                <button
+                  type="submit"
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+                >
+                  Continue
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm text-emerald-400">Step 2</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">Order summary</h2>
+                </div>
+
+                {product ? (
+                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-5">
+                    <h3 className="text-xl font-semibold text-white">{product.name}</h3>
+                    <p className="mt-2 text-sm text-slate-300">{product.description}</p>
+                    <p className="mt-4 text-2xl font-bold text-emerald-400">
+                      {formatPrice(product.price_cents, product.billing_cycle)}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">Loading product…</p>
+                )}
+
+                {referralCode ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                    Referral discount applied.
+                  </div>
+                ) : null}
+
+                {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+
+                <button
+                  type="button"
+                  onClick={() => orderMutation.mutate()}
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+                >
+                  Confirm and pay
+                </button>
+              </div>
+            )}
+          </div>
+
+          <aside className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            <h2 className="text-lg font-semibold text-white">Progress</h2>
+            <ol className="mt-4 space-y-4 text-sm text-slate-300">
+              {[
+                'Account',
+                'Order summary',
+                'Payment',
+              ].map((label, index) => {
+                const currentStep = index + 1;
+                return (
+                  <li key={label} className="flex items-center gap-3">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${step >= currentStep ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
+                    >
+                      {currentStep}
+                    </span>
+                    <span>{label}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </aside>
+        </div>
+      </main>
+    </AppShell>
+  );
+}
+
 export default function App() {
   const location = useLocation();
 
@@ -257,6 +486,7 @@ export default function App() {
       <Route path="/" element={<Homepage />} />
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/products/:slug" element={<ProductPage />} />
+      <Route path="/checkout" element={<CheckoutPage />} />
     </Routes>
   );
 }

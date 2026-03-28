@@ -6,6 +6,7 @@ import { registerAdminAuthModule, requireAdmin, requireAdminRole } from './admin
 import { billingEventEmitter, registerBillingHandlers, registerBillingRoutes } from './modules/billing/index.js';
 import { registerProductRoutes } from './modules/products/index.js';
 import { registerCmsRoutes } from './modules/cms/index.js';
+import { registerOrderRoutes } from './modules/orders/index.js';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('JWT_SECRET is required');
@@ -31,6 +32,7 @@ await registerAdminAuthModule(app);
 await registerBillingRoutes(app);
 await registerProductRoutes(app);
 await registerCmsRoutes(app);
+await registerOrderRoutes(app);
 
 app.get('/health', async () => ({
   status: 'ok',

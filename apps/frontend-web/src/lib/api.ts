@@ -19,11 +19,23 @@ export type CmsPublic = {
   footer_tagline?: string;
 };
 
-async function fetchJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`);
+export type AuthResponse = {
+  accessToken: string;
+};
+
+async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    credentials: 'include',
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
 
   if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+    const text = await response.text();
+    throw new Error(text || `Request failed: ${response.status}`);
   }
 
   return response.json() as Promise<T>;
@@ -39,6 +51,35 @@ export function getProduct(slug: string) {
 
 export function getPublicCms() {
   return fetchJson<CmsPublic>('/cms/public');
+}
+
+export function registerUser(input: {
+  email: string;
+  password: string;
+  full_name: string;
+  referral_code_used?: string;
+}) {
+  return fetchJson<AuthResponse>('/auth/register', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function loginUser(input: { email: string; password: string }) {
+  return fetchJson<AuthResponse>('/auth/login', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
+export function createOrder(input: { productId: string; referralCodeUsed?: string }, accessToken: string) {
+  return fetchJson<{ checkoutUrl: string }>('/orders/create', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(input),
+  });
 }
 
 export { API_BASE_URL };
