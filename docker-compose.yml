@@ -19,7 +19,7 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/frontend-web
-    command: sh -lc "pnpm install --no-frozen-lockfile && pnpm dev"
+    command: sh -lc "cd /workspace && pnpm install --no-frozen-lockfile && cd /workspace/apps/frontend-web && pnpm dev"
     stdin_open: true
     tty: true
     expose:
