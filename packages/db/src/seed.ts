@@ -28,7 +28,7 @@ async function main() {
     .insert(adminUsers)
     .values({
       email: 'admin@openclaw.local',
-      passwordHash: hashPassword('admin_dev_password'),
+      passwordHash: await hashPassword('admin_dev_password'),
       fullName: 'Dev Super Admin',
       role: adminRoleEnum.enumValues[0],
       status: adminStatusEnum.enumValues[0],
@@ -36,7 +36,7 @@ async function main() {
     .onConflictDoUpdate({
       target: adminUsers.email,
       set: {
-        passwordHash: hashPassword('admin_dev_password'),
+        passwordHash: await hashPassword('admin_dev_password'),
         fullName: 'Dev Super Admin',
         role: adminRoleEnum.enumValues[0],
         status: adminStatusEnum.enumValues[0],
@@ -118,7 +118,7 @@ async function main() {
     .insert(users)
     .values({
       email: 'user@openclaw.local',
-      passwordHash: hashPassword('user_dev_password'),
+      passwordHash: await hashPassword('user_dev_password'),
       fullName: 'Test User',
       referralCode: 'TEST1234',
       emailVerified: true,
@@ -127,7 +127,7 @@ async function main() {
     .onConflictDoUpdate({
       target: users.email,
       set: {
-        passwordHash: hashPassword('user_dev_password'),
+        passwordHash: await hashPassword('user_dev_password'),
         fullName: 'Test User',
         referralCode: 'TEST1234',
         emailVerified: true,
