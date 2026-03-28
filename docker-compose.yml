@@ -1,4 +1,19 @@
 services:
+  caddy:
+    image: caddy:2
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend-web
+      - frontend-app
+      - frontend-admin
+      - backend-api
+
   frontend-web:
     build:
       context: .
@@ -128,3 +143,5 @@ volumes:
   worker_node_modules:
   worker_app_node_modules:
   postgres_data:
+  caddy_data:
+  caddy_config:

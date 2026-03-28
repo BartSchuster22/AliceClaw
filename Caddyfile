@@ -1,0 +1,19 @@
+{
+  email admin@canariaslibre.com
+}
+
+web.canariaslibre.com {
+  reverse_proxy frontend-web:5173
+}
+
+app.canariaslibre.com {
+  reverse_proxy frontend-app:5173
+}
+
+admn.canariaslibre.com {
+  reverse_proxy frontend-admin:5173
+}
+
+api.canariaslibre.com {
+  reverse_proxy backend-api:4000
+}
