@@ -14,6 +14,7 @@ import {
 } from '@psi/db/schema';
 
 import { getVpsProvider } from '../providers/index.js';
+import { getRedisConnection } from '../lib/redis.js';
 import { notificationService } from '../services/notification-service.js';
 
 export type ProvisionInstanceJobPayload = {
@@ -105,8 +106,9 @@ async function markFailed(params: { vpsInstanceId: string; jobId: string; errorM
 
 export function createProvisionInstanceWorker() {
   const vpsProvider = getVpsProvider();
+  const connection = getRedisConnection();
 
-  return new Worker<ProvisionInstanceJobPayload>(
+  const worker = new Worker<ProvisionInstanceJobPayload>(
     'provision-instance',
     async (job) => {
       const { subscriptionId, vpsInstanceId, jobId } = job.data;
@@ -287,9 +289,14 @@ export function createProvisionInstanceWorker() {
       }
     },
     {
-      connection: {
-        url: process.env.REDIS_URL ?? 'redis://redis:6379',
-      },
+      connection,
+      concurrency: 1,
     },
   );
+
+  worker.on('error', (error) => {
+    console.error('[worker][bullmq] worker error', error.message);
+  });
+
+  return worker;
 }

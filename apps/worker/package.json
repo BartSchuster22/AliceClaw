@@ -12,6 +12,7 @@
     "@psi/db": "workspace:*",
     "bullmq": "^5.58.5",
     "drizzle-orm": "^0.44.5",
+    "ioredis": "^5.10.1",
     "postmark": "^4.0.5"
   },
   "devDependencies": {
