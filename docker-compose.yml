@@ -76,7 +76,7 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/backend-api
-    command: sh -c "pnpm dev"
+    command: sh -lc "pnpm install --no-frozen-lockfile && pnpm dev"
     stdin_open: true
     tty: true
     environment:
