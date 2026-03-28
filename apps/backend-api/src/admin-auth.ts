@@ -43,16 +43,33 @@ function getJwtSecret() {
   return secret;
 }
 
+type AdminAccessTokenPayload = AuthenticatedAdmin & { tokenType: 'access' };
+type AdminRefreshTokenPayload = AuthenticatedAdmin & { tokenType: 'refresh' };
+
 function signAdminAccessToken(payload: AuthenticatedAdmin) {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: ADMIN_ACCESS_TOKEN_EXPIRES_IN });
+  const tokenPayload: AdminAccessTokenPayload = { ...payload, tokenType: 'access' };
+  return jwt.sign(tokenPayload, getJwtSecret(), { expiresIn: ADMIN_ACCESS_TOKEN_EXPIRES_IN });
 }
 
 function signAdminRefreshToken(payload: AuthenticatedAdmin) {
-  return jwt.sign(payload, getJwtSecret(), { expiresIn: ADMIN_REFRESH_TOKEN_EXPIRES_IN });
+  const tokenPayload: AdminRefreshTokenPayload = { ...payload, tokenType: 'refresh' };
+  return jwt.sign(tokenPayload, getJwtSecret(), { expiresIn: ADMIN_REFRESH_TOKEN_EXPIRES_IN });
 }
 
-function verifyAdminToken(token: string) {
-  return jwt.verify(token, getJwtSecret()) as AuthenticatedAdmin;
+function verifyAdminAccessToken(token: string) {
+  const payload = jwt.verify(token, getJwtSecret()) as AdminAccessTokenPayload;
+  if (payload.tokenType !== 'access') {
+    throw new Error('Invalid admin access token');
+  }
+  return { sub: payload.sub, email: payload.email, role: payload.role } as AuthenticatedAdmin;
+}
+
+function verifyAdminRefreshToken(token: string) {
+  const payload = jwt.verify(token, getJwtSecret()) as AdminRefreshTokenPayload;
+  if (payload.tokenType !== 'refresh') {
+    throw new Error('Invalid admin refresh token');
+  }
+  return { sub: payload.sub, email: payload.email, role: payload.role } as AuthenticatedAdmin;
 }
 
 function getCookieDomain() {
@@ -98,7 +115,7 @@ export async function requireAdmin(request: FastifyRequest, reply: FastifyReply)
     }
 
     const token = authHeader.slice('Bearer '.length);
-    request.admin = verifyAdminToken(token);
+    request.admin = verifyAdminAccessToken(token);
   } catch {
     return reply.status(401).send({ error: 'Unauthorized' });
   }
@@ -160,7 +177,7 @@ export async function registerAdminAuthModule(app: FastifyInstance) {
     }
 
     try {
-      const payload = verifyAdminToken(refreshToken);
+      const payload = verifyAdminRefreshToken(refreshToken);
       const accessToken = signAdminAccessToken(payload);
 
       return reply.send({ accessToken });
