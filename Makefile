@@ -8,7 +8,7 @@ logs:
 	docker compose logs -f
 
 db-migrate:
-	pnpm --filter @psi/db migrate
+	docker compose exec backend-api pnpm --filter @psi/db migrate
 
 db-seed:
-	pnpm --filter @psi/db seed
+	docker compose exec backend-api pnpm --filter @psi/db seed

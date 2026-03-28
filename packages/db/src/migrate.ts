@@ -3,7 +3,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
 
 const connectionString =
-  process.env.DATABASE_URL ?? 'postgres://openclaw:dev_password@localhost:5432/openclaw';
+  process.env.DATABASE_URL ?? 'postgres://openclaw:dev_password@postgres:5432/openclaw';
 
 const sql = postgres(connectionString, { max: 1 });
 const db = drizzle(sql);
