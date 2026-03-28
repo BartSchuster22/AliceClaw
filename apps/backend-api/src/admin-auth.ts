@@ -63,7 +63,7 @@ function setAdminRefreshTokenCookie(reply: FastifyReply, token: string) {
   reply.setCookie(ADMIN_REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: true,
-    sameSite: 'strict',
+    sameSite: 'lax',
     path: '/',
     domain: getCookieDomain(),
     maxAge: 60 * 60 * 24 * 30,
@@ -75,7 +75,7 @@ function clearAdminRefreshTokenCookie(reply: FastifyReply) {
     path: '/',
     httpOnly: true,
     secure: true,
-    sameSite: 'strict',
+    sameSite: 'lax',
     domain: getCookieDomain(),
   });
 }
