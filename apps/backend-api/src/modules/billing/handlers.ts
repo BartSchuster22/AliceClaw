@@ -5,7 +5,6 @@ import { db } from '@psi/db';
 import {
   billingEventsLog,
   orders,
-  products,
   provisioningJobs,
   subscriptions,
   vpsInstances,
@@ -13,13 +12,23 @@ import {
 
 import type { BillingEventEmitter } from './emitter.js';
 
-const redisConnection = {
-  url: process.env.REDIS_URL ?? 'redis://redis:6379',
-};
+let provisionQueue: Queue | null = null;
 
-const provisionQueue = new Queue('provision-instance', {
-  connection: redisConnection,
-});
+function getProvisionQueue() {
+  if (!provisionQueue) {
+    provisionQueue = new Queue('provision-instance', {
+      connection: {
+        url: process.env.REDIS_URL ?? 'redis://redis:6379',
+      },
+    });
+
+    provisionQueue.on('error', (error) => {
+      console.error('[billing] BullMQ queue error:', error.message);
+    });
+  }
+
+  return provisionQueue;
+}
 
 export function registerBillingHandlers(eventEmitter: BillingEventEmitter) {
   eventEmitter.on('subscription.activated', async (event) => {
@@ -90,11 +99,15 @@ export function registerBillingHandlers(eventEmitter: BillingEventEmitter) {
       })
       .returning();
 
-    await provisionQueue.add('provision-instance', {
-      subscriptionId: subscription.id,
-      vpsInstanceId: vpsInstance.id,
-      jobId: job.id,
-    });
+    try {
+      await getProvisionQueue().add('provision-instance', {
+        subscriptionId: subscription.id,
+        vpsInstanceId: vpsInstance.id,
+        jobId: job.id,
+      });
+    } catch (error) {
+      console.error('[billing] failed to enqueue provision-instance job:', error);
+    }
   });
 
   eventEmitter.on('subscription.payment_failed', async (event) => {
