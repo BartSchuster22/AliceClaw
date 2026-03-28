@@ -45,10 +45,25 @@ async function main() {
 
   await db
     .insert(products)
-    .values([
-      {
+    .values({
+      name: 'Starter',
+      slug: 'starter',
+      description: 'Starter PSI plan',
+      priceCents: 2900,
+      billingCycle: 'monthly',
+      vpsSpec: {
+        ram_gb: 4,
+        cpu: 2,
+        disk_gb: 40,
+        os_image: 'ubuntu-22.04',
+      },
+      provisioningTemplateId: 'starter-template',
+      active: true,
+    })
+    .onConflictDoUpdate({
+      target: products.slug,
+      set: {
         name: 'Starter',
-        slug: 'starter',
         description: 'Starter PSI plan',
         priceCents: 2900,
         billingCycle: 'monthly',
@@ -61,9 +76,29 @@ async function main() {
         provisioningTemplateId: 'starter-template',
         active: true,
       },
-      {
+    });
+
+  await db
+    .insert(products)
+    .values({
+      name: 'Pro',
+      slug: 'pro',
+      description: 'Pro PSI plan',
+      priceCents: 5900,
+      billingCycle: 'monthly',
+      vpsSpec: {
+        ram_gb: 8,
+        cpu: 4,
+        disk_gb: 80,
+        os_image: 'ubuntu-22.04',
+      },
+      provisioningTemplateId: 'pro-template',
+      active: true,
+    })
+    .onConflictDoUpdate({
+      target: products.slug,
+      set: {
         name: 'Pro',
-        slug: 'pro',
         description: 'Pro PSI plan',
         priceCents: 5900,
         billingCycle: 'monthly',
@@ -75,18 +110,6 @@ async function main() {
         },
         provisioningTemplateId: 'pro-template',
         active: true,
-      },
-    ])
-    .onConflictDoUpdate({
-      target: products.slug,
-      set: {
-        name: sql`excluded.name`,
-        description: sql`excluded.description`,
-        priceCents: sql`excluded.price_cents`,
-        billingCycle: sql`excluded.billing_cycle`,
-        vpsSpec: sql`excluded.vps_spec`,
-        provisioningTemplateId: sql`excluded.provisioning_template_id`,
-        active: sql`excluded.active`,
       },
     });
 
