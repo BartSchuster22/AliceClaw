@@ -1,3 +1,5 @@
+import { randomUUID } from 'node:crypto';
+
 import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
@@ -32,11 +34,19 @@ export async function registerOrderRoutes(app: FastifyInstance) {
       return reply.status(404).send({ error: 'Product not found' });
     }
 
-    const checkoutSession = await stripeAdapter.createCheckoutSession({
-      userId: request.user.sub,
-      productId,
-      referralCodeUsed,
-    });
+    const canUseStripe = Boolean(process.env.STRIPE_SECRET_KEY);
+    const mockSessionId = `dev_mock_${randomUUID()}`;
+
+    const checkoutSession = canUseStripe
+      ? await stripeAdapter.createCheckoutSession({
+          userId: request.user.sub,
+          productId,
+          referralCodeUsed,
+        })
+      : {
+          sessionId: mockSessionId,
+          url: `${process.env.FRONTEND_APP_URL ?? 'https://app.canariaslibre.com'}/onboarding?session_id=${mockSessionId}`,
+        };
 
     await db.insert(orders).values({
       userId: request.user.sub,
