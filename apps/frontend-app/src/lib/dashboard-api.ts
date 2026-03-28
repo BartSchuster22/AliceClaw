@@ -65,6 +65,14 @@ export type UserReferralsResponse = {
     reason: string;
     createdAt: string;
   }>;
+  referrals: Array<{
+    id: string;
+    referredUserId: string;
+    referralCode: string;
+    orderId: string | null;
+    status: string;
+    createdAt: string;
+  }>;
 };
 
 export function refreshAccessToken() {

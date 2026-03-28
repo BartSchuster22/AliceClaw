@@ -220,6 +220,12 @@ export async function registerUserRoutes(app: FastifyInstance) {
       .where(eq(referralRewardsLedger.userId, request.user.sub))
       .orderBy(desc(referralRewardsLedger.createdAt));
 
+    const referralRows = await db
+      .select()
+      .from(referrals)
+      .where(eq(referrals.referrerUserId, request.user.sub))
+      .orderBy(desc(referrals.createdAt));
+
     return {
       referralCode: user?.referralCode ?? null,
       referralLink: `${process.env.FRONTEND_WEB_URL ?? 'https://web.canariaslibre.com'}?ref=${user?.referralCode ?? ''}`,
@@ -227,6 +233,7 @@ export async function registerUserRoutes(app: FastifyInstance) {
       convertedCount,
       totalCreditCents,
       ledger,
+      referrals: referralRows,
     };
   });
 
