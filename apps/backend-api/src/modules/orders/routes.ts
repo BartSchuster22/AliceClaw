@@ -35,6 +35,16 @@ export async function registerOrderRoutes(app: FastifyInstance) {
     }
 
     const canUseStripe = Boolean(process.env.STRIPE_SECRET_KEY);
+    const [order] = await db
+      .insert(orders)
+      .values({
+        userId: request.user.sub,
+        productId,
+        status: 'pending',
+        referralCodeUsed: referralCodeUsed ?? null,
+      })
+      .returning();
+
     const mockSessionId = `dev_mock_${randomUUID()}`;
 
     const checkoutSession = canUseStripe
@@ -45,17 +55,16 @@ export async function registerOrderRoutes(app: FastifyInstance) {
         })
       : {
           sessionId: mockSessionId,
-          url: `${process.env.FRONTEND_APP_URL ?? 'https://app.canariaslibre.com'}/onboarding?session_id=${mockSessionId}`,
+          url: `${process.env.FRONTEND_APP_URL ?? 'https://app.canariaslibre.com'}/onboarding?orderId=${order.id}`,
         };
 
-    await db.insert(orders).values({
-      userId: request.user.sub,
-      productId,
-      status: 'pending',
-      referralCodeUsed: referralCodeUsed ?? null,
-      stripeSessionId: checkoutSession.sessionId,
-    });
+    await db
+      .update(orders)
+      .set({
+        stripeSessionId: checkoutSession.sessionId,
+      })
+      .where(eq(orders.id, order.id));
 
-    return reply.send({ checkoutUrl: checkoutSession.url });
+    return reply.send({ checkoutUrl: checkoutSession.url, orderId: order.id });
   });
 }

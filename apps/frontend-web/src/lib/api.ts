@@ -73,7 +73,7 @@ export function loginUser(input: { email: string; password: string }) {
 }
 
 export function createOrder(input: { productId: string; referralCodeUsed?: string }, accessToken: string) {
-  return fetchJson<{ checkoutUrl: string }>('/orders/create', {
+  return fetchJson<{ checkoutUrl: string; orderId: string }>('/orders/create', {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,

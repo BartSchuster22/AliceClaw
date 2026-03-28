@@ -39,13 +39,14 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/frontend-app
-    command: sh -c "pnpm dev"
+    command: sh -lc "cd /workspace && pnpm install --no-frozen-lockfile && cd /workspace/apps/frontend-app && pnpm dev"
     stdin_open: true
     tty: true
     expose:
       - "5173"
     environment:
       CI: "true"
+      VITE_API_URL: https://api.canariaslibre.com
     volumes:
       - .:/workspace
       - frontend_app_node_modules:/workspace/node_modules
