@@ -6,7 +6,7 @@ services:
     working_dir: /workspace/apps/frontend-web
     command: pnpm dev
     ports:
-      - "3000:3000"
+      - "3000:5173"
     environment:
       CI: "true"
     volumes:
@@ -23,7 +23,7 @@ services:
     working_dir: /workspace/apps/frontend-app
     command: pnpm dev
     ports:
-      - "3001:3001"
+      - "3001:5173"
     environment:
       CI: "true"
     volumes:
@@ -40,7 +40,7 @@ services:
     working_dir: /workspace/apps/frontend-admin
     command: pnpm dev
     ports:
-      - "3002:3002"
+      - "3002:5173"
     environment:
       CI: "true"
     volumes:
