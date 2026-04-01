@@ -4,7 +4,7 @@ import { z } from 'zod';
 
 import { requireAdmin, requireAdminRole } from '../../admin-auth.js';
 import { db } from '@psi/db';
-import { containerInstances, hostServers, serverScaleEvents, serverTemplates } from '@psi/db/schema';
+import { containerInstances, hostProvisionAttempts, hostServers, serverScaleEvents, serverTemplates } from '@psi/db/schema';
 import { enqueueProvisionHostServerJob } from '../../lib/queues.js';
 
 const activeRuntimeStatuses = ['allocating', 'deploying', 'starting', 'running', 'unhealthy'] as const;
@@ -40,6 +40,13 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
               ),
             );
 
+          const [latestAttempt] = await db
+            .select()
+            .from(hostProvisionAttempts)
+            .where(eq(hostProvisionAttempts.hostServerId, host.id))
+            .orderBy(desc(hostProvisionAttempts.createdAt))
+            .limit(1);
+
           const usableCpu = host.totalCpuMillicores - host.reservedCpuMillicores;
           const usableMemory = host.totalMemoryMb - host.reservedMemoryMb;
           const utilPercent = Math.max(
@@ -53,6 +60,7 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
             usedMemory: Number(usage?.usedMemory ?? 0),
             containerCount: Number(usage?.containerCount ?? 0),
             utilPercent,
+            latestProvisionAttempt: latestAttempt ?? null,
           };
         }),
       );
@@ -94,10 +102,17 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
         .where(eq(serverScaleEvents.triggerHostServerId, host.id))
         .orderBy(desc(serverScaleEvents.createdAt));
 
+      const provisionAttempts = await db
+        .select()
+        .from(hostProvisionAttempts)
+        .where(eq(hostProvisionAttempts.hostServerId, host.id))
+        .orderBy(desc(hostProvisionAttempts.createdAt));
+
       return {
         host,
         containers,
         scaleEvents,
+        provisionAttempts,
       };
     },
   );
@@ -256,7 +271,23 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
     '/admin/scale-events',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin', 'provisioning_admin'])] },
     async () => {
-      return db.select().from(serverScaleEvents).orderBy(desc(serverScaleEvents.createdAt));
+      const events = await db.select().from(serverScaleEvents).orderBy(desc(serverScaleEvents.createdAt));
+
+      return Promise.all(
+        events.map(async (event) => {
+          const [latestAttempt] = await db
+            .select()
+            .from(hostProvisionAttempts)
+            .where(eq(hostProvisionAttempts.scaleEventId, event.id))
+            .orderBy(desc(hostProvisionAttempts.createdAt))
+            .limit(1);
+
+          return {
+            ...event,
+            latestProvisionAttempt: latestAttempt ?? null,
+          };
+        }),
+      );
     },
   );
 }

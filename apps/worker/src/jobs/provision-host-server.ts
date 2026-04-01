@@ -1,9 +1,9 @@
 import { Worker } from 'bullmq';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNull, lt } from 'drizzle-orm';
 import type IORedis from 'ioredis';
 
 import { db } from '@psi/db';
-import { hostServers, serverScaleEvents, serverTemplates } from '@psi/db/schema';
+import { hostProvisionAttempts, hostServers, serverScaleEvents, serverTemplates } from '@psi/db/schema';
 
 import { closeRedisConnection, createRedisConnection } from '../lib/redis.js';
 import { getHostServerProvider } from '../providers/index.js';
@@ -19,6 +19,110 @@ export type ProvisionHostServerWorkerRuntime = {
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function getStatusPollIntervalMs() {
+  return Number(process.env.HOST_PROVIDER_STATUS_POLL_INTERVAL_MS ?? 10_000);
+}
+
+function getStatusPollMaxAttempts() {
+  return Number(process.env.HOST_PROVIDER_STATUS_POLL_MAX_ATTEMPTS ?? 60);
+}
+
+function getReadyStabilizationDelayMs() {
+  return Number(process.env.HOST_PROVIDER_READY_STABILIZATION_DELAY_MS ?? 45_000);
+}
+
+function getProvisionAttemptStaleMs() {
+  return Number(process.env.HOST_PROVISION_ATTEMPT_STALE_MS ?? 300_000);
+}
+
+async function heartbeatAttempt(attemptId: string, workerRunId: string) {
+  await db
+    .update(hostProvisionAttempts)
+    .set({
+      lastHeartbeatAt: new Date(),
+      workerRunId,
+    })
+    .where(eq(hostProvisionAttempts.id, attemptId));
+}
+
+export async function reconcileStaleHostProvisionAttempts(workerRunId: string) {
+  const staleBefore = new Date(Date.now() - getProvisionAttemptStaleMs());
+  const failureReason = 'Provisioning interrupted or stale after worker restart';
+
+  const staleAttempts = await db
+    .select()
+    .from(hostProvisionAttempts)
+    .where(eq(hostProvisionAttempts.status, 'running'));
+
+  for (const attempt of staleAttempts) {
+    const belongsToOlderRun = attempt.workerRunId != null && attempt.workerRunId !== workerRunId;
+    const isStaleByHeartbeat = attempt.lastHeartbeatAt < staleBefore;
+
+    if (!belongsToOlderRun && !isStaleByHeartbeat) {
+      continue;
+    }
+
+    if (attempt.hostServerId) {
+      await db
+        .update(hostServers)
+        .set({
+          status: 'failed',
+          readyAt: null,
+        })
+        .where(and(eq(hostServers.id, attempt.hostServerId), eq(hostServers.status, 'provisioning')));
+    }
+
+    await db
+      .update(serverScaleEvents)
+      .set({
+        status: 'failed',
+        failedReason: failureReason,
+      })
+      .where(and(eq(serverScaleEvents.id, attempt.scaleEventId), eq(serverScaleEvents.status, 'provisioning')));
+
+    await db
+      .update(hostProvisionAttempts)
+      .set({
+        status: 'failed',
+        failureReason,
+        finishedAt: new Date(),
+      })
+      .where(eq(hostProvisionAttempts.id, attempt.id));
+  }
+
+  const legacyStaleScaleEvents = await db
+    .select()
+    .from(serverScaleEvents)
+    .where(and(eq(serverScaleEvents.status, 'provisioning'), lt(serverScaleEvents.createdAt, staleBefore)));
+
+  for (const scaleEvent of legacyStaleScaleEvents) {
+    const [legacyHost] = await db
+      .select()
+      .from(hostServers)
+      .where(and(eq(hostServers.status, 'provisioning'), isNull(hostServers.readyAt)))
+      .orderBy(hostServers.createdAt)
+      .limit(1);
+
+    if (legacyHost) {
+      await db
+        .update(hostServers)
+        .set({
+          status: 'failed',
+          readyAt: null,
+        })
+        .where(eq(hostServers.id, legacyHost.id));
+    }
+
+    await db
+      .update(serverScaleEvents)
+      .set({
+        status: 'failed',
+        failedReason: failureReason,
+      })
+      .where(eq(serverScaleEvents.id, scaleEvent.id));
+  }
 }
 
 function buildHostCloudInit(params: { sshPublicKeys: string[]; prePullImages: string[] }) {
@@ -106,6 +210,18 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
       });
 
       let createdHostRecordId: string | null = null;
+      let createdProviderId: string | null = null;
+
+      const workerRunId = process.env.WORKER_RUN_ID ?? `worker-run-${process.pid}`;
+
+      const [attempt] = await db
+        .insert(hostProvisionAttempts)
+        .values({
+          scaleEventId: scaleEvent.id,
+          workerRunId,
+          status: 'running',
+        })
+        .returning();
 
       try {
         const created = await hostServerProvider.provisionHostServer({
@@ -115,6 +231,17 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
           sshPublicKeys,
           cloudInitScript,
         });
+
+        createdProviderId = created.providerId;
+
+        await db
+          .update(hostProvisionAttempts)
+          .set({
+            providerInstanceId: created.providerId,
+            workerRunId,
+            lastHeartbeatAt: new Date(),
+          })
+          .where(eq(hostProvisionAttempts.id, attempt.id));
 
         const reservedCpuMillicores = Math.floor(
           activeTemplate.expectedCpuMillicores * (activeTemplate.managementOverheadPercent / 100),
@@ -148,8 +275,18 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
 
         createdHostRecordId = host.id;
 
+        await db
+          .update(hostProvisionAttempts)
+          .set({
+            hostServerId: host.id,
+            workerRunId,
+            lastHeartbeatAt: new Date(),
+          })
+          .where(eq(hostProvisionAttempts.id, attempt.id));
+
         let providerStatus: 'starting' | 'running' | 'error' = 'starting';
-        for (let attempt = 1; attempt <= 60; attempt += 1) {
+        for (let pollAttempt = 1; pollAttempt <= getStatusPollMaxAttempts(); pollAttempt += 1) {
+          await heartbeatAttempt(attempt.id, workerRunId);
           providerStatus = await hostServerProvider.getHostServerStatus(created.providerId);
           if (providerStatus === 'running') {
             break;
@@ -157,14 +294,14 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
           if (providerStatus === 'error') {
             throw new Error('Host provider returned error state');
           }
-          await sleep(10_000);
+          await sleep(getStatusPollIntervalMs());
         }
 
         if (providerStatus !== 'running') {
           throw new Error('ProvisionTimeoutError');
         }
 
-        await sleep(45_000);
+        await sleep(getReadyStabilizationDelayMs());
 
         await db
           .update(hostServers)
@@ -182,13 +319,39 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
             completedAt: new Date(),
           })
           .where(eq(serverScaleEvents.id, scaleEvent.id));
+
+        await db
+          .update(hostProvisionAttempts)
+          .set({
+            status: 'completed',
+            cleanupStatus: 'not_required',
+            finishedAt: new Date(),
+            lastHeartbeatAt: new Date(),
+          })
+          .where(eq(hostProvisionAttempts.id, attempt.id));
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
+
+        let cleanupStatus = 'not_started';
+
+        if (createdProviderId) {
+          cleanupStatus = 'in_progress';
+          try {
+            await hostServerProvider.deleteHostServer(createdProviderId);
+            cleanupStatus = 'completed';
+          } catch (cleanupError) {
+            cleanupStatus = 'failed';
+            console.error('[provision-host-server] cleanup failed', cleanupError);
+          }
+        }
 
         if (createdHostRecordId) {
           await db
             .update(hostServers)
-            .set({ status: 'failed' })
+            .set({
+              status: 'failed',
+              readyAt: null,
+            })
             .where(eq(hostServers.id, createdHostRecordId));
         }
 
@@ -199,6 +362,17 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
             failedReason: message,
           })
           .where(eq(serverScaleEvents.id, scaleEvent.id));
+
+        await db
+          .update(hostProvisionAttempts)
+          .set({
+            status: 'failed',
+            failureReason: message,
+            cleanupStatus,
+            finishedAt: new Date(),
+            lastHeartbeatAt: new Date(),
+          })
+          .where(eq(hostProvisionAttempts.id, attempt.id));
 
         throw error;
       }

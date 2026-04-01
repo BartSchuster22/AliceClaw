@@ -10,30 +10,31 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
 ## Current active project
 
 - Project: PSI platform
-- Current focus: stabilization/manual sweep after closing referral verification.
-- Current status: referral flow was verified from live local data. Admin referral routes respond correctly. A real referral moved pending -> converted -> rewarded, and ledger credit was written/applied in mock mode. While reconnecting, a separate backend startup issue was found and fixed by reinstalling workspace deps in-container so `postmark` resolved again.
-- Referral hardening completed: deferred live-Stripe credit no longer auto-pretends success in code. Mock mode still marks applied; live undeployed Stripe path now keeps ledger pending and referral converted until a real credit implementation exists. Historical rows are unchanged.
-- Stabilization fixes completed this round:
-  - fixed dev user-login drift by reseeding `user@openclaw.local` with the documented `user_dev_password`
-  - fixed `/user/subscriptions` 500, then restored live `container_instances` joins after migration `0003` landed
-  - hardened backend and worker notification paths so missing Postmark config skips email cleanly in local/dev instead of 500/failing finished jobs
-  - hardened worker provisioning preflight so missing env is detected early and logged as configuration blockage instead of failing deep in the flow
-  - fixed the actual schema drift by applying DB migration `0003_shared-host-runtime-foundations`
-  - bootstrapped active `product_definitions` for `starter` and `pro`
-  - bootstrapped one active `server_template` and one ready dev `host_server`
-  - marked stale queued VPS-era provisioning jobs as obsolete failures so DB state no longer implies they are still actionable
-  - fixed deploy-worker bugs uncovered during the first real post-migration run (`productDefinitions` import, delayed requeue path, fresh provisioning-job rows for reruns)
-  - added the missing user delete route
-  - cleaned stopped/deleted payload semantics so stale runtime fields are nulled in user/onboarding responses
-  - verified one fresh post-migration host-backed mock deploy completed end-to-end, then verified lifecycle coverage: deploy -> visibility -> stop -> start -> health-check -> delete
-  - verified frontend-web source starts cleanly in an isolated Vite launch; the scary duplicate-component error appears to be stale from the long-running dev container rather than current source
-- Remaining referral caveat: existing historical data may still show already-applied rows from before the hardening patch; future runs should behave more truthfully.
+- Current focus: shared-host runtime stabilization, provisioning reliability, and admin operational polish.
+- Current status: referral flow was verified from live local data. Admin referral routes respond correctly. Deferred live Stripe credit remains intentionally unimplemented, but referral state no longer falsely auto-applies in live-Stripe-deferred mode.
+- Shared-host stabilization already completed before the latest pass:
+  - fixed dev user-login drift by reseeding `user@openclaw.local`
+  - fixed `/user/subscriptions` runtime path and restored live `container_instances` joins after migration `0003`
+  - hardened backend and worker notification paths so missing Postmark config skips email cleanly in local/dev
+  - applied DB migration `0003_shared-host-runtime-foundations`
+  - bootstrapped active product definitions, server template, and ready dev host data
+  - cleaned stale queued VPS-era provisioning jobs
+  - fixed deploy worker bugs, added user delete route, cleaned stopped/deleted payload semantics, and verified lifecycle coverage (deploy -> visibility -> stop -> start -> health-check -> delete)
+- Provisioning reliability/admin work completed in this pass:
+  - upgraded mock host provider with scenario-driven testing via `.openclaw/mock-host-provider.json` (`success`, `fail_provision`, `error_on_status`, `stuck_starting`, `fail_delete`) plus delay/readiness knobs
+  - fixed same-run mid-provision failure cleanup so created host rows become `failed` and provider cleanup is attempted best-effort
+  - implemented `host_provision_attempts` with heartbeat, cleanup status, worker-run ownership, and startup reconciliation (migrations `0004_host-provision-attempts` and `0005_host-provision-attempt-worker-run-id`)
+  - verified fresh fail/success behavior under the attempt model and verified interrupted attempts from older worker runs are reconciled to failed on startup
+  - cleaned legacy orphaned pre-attempt provisioning rows once and fenced them off from future recovery logic
+  - fixed worker dev flow so the worker container no longer reruns install-on-start after a proper `docker compose up -d --force-recreate worker`
+  - improved admin server-fleet observability: `/admin/servers`, `/admin/servers/:id`, and `/admin/scale-events` now expose provisioning-attempt context; frontend admin Server Fleet page now shows latest attempt status, cleanup result, failure reason, and worker run detail
+- Remaining caveat: legacy pre-attempt historical rows remain old test artifacts; going forward `host_provision_attempts` is the authoritative recovery model.
 
 ## Next exact step
 
-- Pause here as a clean checkpoint.
-- Next session should start with a short broader polish/integration sweep: admin UX consistency, scale-event/server-template lifecycle, and any remaining real-email/live-Stripe follow-ups once those integrations are intentionally resumed.
-- Keep referral verification summarized; do not reopen it unless the billing-credit implementation changes.
+- Reliability/admin pass is checkpointed here.
+- Next likely operational improvement: add admin lifecycle recovery actions (for example retry failed provisioning / reprovision from failed scale-event context) now that failure visibility is in place.
+- After that, continue broader polish/integration work or intentionally resume real provider / real email / real Stripe follow-ups.
 
 ## Rules for this file
 
@@ -47,6 +48,6 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
 
 ## Critical cautions
 
-- Do not mix unrelated product/UI work into this worker debugging phase.
+- Do not mix unrelated product/UI work into provisioning-reliability changes.
 - Keep logs summarized, not pasted.
-- If dependency/runtime weirdness appears, distinguish container/runtime issues from code issues before patching app logic.
+- For provisioning recovery bugs, distinguish legacy pre-attempt artifacts from new attempt-model behavior before patching further.

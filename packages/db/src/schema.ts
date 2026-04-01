@@ -328,6 +328,23 @@ export const serverScaleEvents = pgTable('server_scale_events', {
   createdAt: timestamp('created_at', { withTimezone: false }).notNull().defaultNow(),
 });
 
+export const hostProvisionAttempts = pgTable('host_provision_attempts', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  scaleEventId: uuid('scale_event_id')
+    .notNull()
+    .references(() => serverScaleEvents.id),
+  hostServerId: uuid('host_server_id').references(() => hostServers.id),
+  providerInstanceId: varchar('provider_instance_id'),
+  workerRunId: varchar('worker_run_id'),
+  status: varchar('status').notNull(),
+  failureReason: text('failure_reason'),
+  cleanupStatus: varchar('cleanup_status').notNull().default('not_started'),
+  startedAt: timestamp('started_at', { withTimezone: false }).notNull().defaultNow(),
+  lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: false }).notNull().defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: false }),
+  createdAt: timestamp('created_at', { withTimezone: false }).notNull().defaultNow(),
+});
+
 export const emailVerifications = pgTable('email_verifications', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id')

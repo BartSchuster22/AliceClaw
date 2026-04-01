@@ -29,6 +29,20 @@
       "when": 1774970000000,
       "tag": "0003_shared-host-runtime-foundations",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1775053200000,
+      "tag": "0004_host-provision-attempts",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1775057460000,
+      "tag": "0005_host-provision-attempt-worker-run-id",
+      "breakpoints": true
     }
   ]
 }

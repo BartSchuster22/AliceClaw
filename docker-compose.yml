@@ -128,7 +128,7 @@ services:
       context: .
       dockerfile: Dockerfile.base
     working_dir: /workspace/apps/worker
-    command: sh -lc "cd /workspace && pnpm install --no-frozen-lockfile && pnpm install --filter @psi/worker --no-frozen-lockfile && cd /workspace/apps/worker && pnpm dev"
+    command: sh -lc "pnpm dev"
     stdin_open: true
     tty: true
     environment:
@@ -137,6 +137,14 @@ services:
       REDIS_URL: redis://redis:6379
       POSTMARK_API_TOKEN: 3d0b921d-6c3c-4eaf-830c-f7088bbb52b8
       POSTMARK_FROM_EMAIL: postmark@aquiero.com
+      MOCK_HOST_PROVIDER_MODE: success
+      MOCK_HOST_PROVISION_DELAY_MS: 500
+      MOCK_HOST_READY_AFTER_CALLS: 2
+      MOCK_HOST_LOG_VERBOSE: "true"
+      HOST_PROVIDER_STATUS_POLL_INTERVAL_MS: 1000
+      HOST_PROVIDER_STATUS_POLL_MAX_ATTEMPTS: 5
+      HOST_PROVIDER_READY_STABILIZATION_DELAY_MS: 1000
+      HOST_PROVISION_ATTEMPT_STALE_MS: 2000
     volumes:
       - .:/workspace
       - worker_node_modules:/workspace/node_modules

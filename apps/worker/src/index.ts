@@ -1,12 +1,17 @@
+import { randomUUID } from 'node:crypto';
+
 import { createContainerLifecycleWorkers } from './jobs/container-lifecycle.js';
 import { createDeployContainerWorker } from './jobs/deploy-container.js';
 import { createHealthCheckContainersWorker, registerHealthCheckContainersJob } from './jobs/health-check-containers.js';
-import { createProvisionHostServerWorker } from './jobs/provision-host-server.js';
+import { createProvisionHostServerWorker, reconcileStaleHostProvisionAttempts } from './jobs/provision-host-server.js';
 import { createProvisionInstanceWorker } from './jobs/provision-instance.js';
 import { createVestReferralRewardWorker } from './jobs/vest-referral-reward.js';
 
-console.log('[worker] started', new Date().toISOString());
+process.env.WORKER_RUN_ID = process.env.WORKER_RUN_ID ?? randomUUID();
 
+console.log('[worker] started', new Date().toISOString(), { workerRunId: process.env.WORKER_RUN_ID });
+
+await reconcileStaleHostProvisionAttempts(process.env.WORKER_RUN_ID);
 await registerHealthCheckContainersJob();
 
 const containerLifecycleWorkers = createContainerLifecycleWorkers();
