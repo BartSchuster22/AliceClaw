@@ -207,6 +207,36 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
     await loadFleet();
   }
 
+  async function archiveHost(hostId: string) {
+    setError(null);
+    const response = await authorizedFetch(`/admin/servers/${hostId}/archive`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      setError(await response.text());
+      return;
+    }
+
+    setSelectedHost(null);
+    setDetail(null);
+    await loadFleet();
+  }
+
+  async function archiveStaleFailedNoise() {
+    setError(null);
+    const response = await authorizedFetch('/admin/scale-events/archive-stale-failed', {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      setError(await response.text());
+      return;
+    }
+
+    await loadFleet();
+  }
+
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
@@ -269,7 +299,12 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                   <p className="text-sm text-slate-400">{selectedHost.provider} · {selectedHost.instanceType}</p>
                 </div>
                 {adminRole === 'super_admin' ? (
-                  <button type="button" onClick={() => void drainHost(selectedHost.id)} className="rounded-xl border border-amber-500/40 px-4 py-2 text-sm text-amber-300">Drain server</button>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => void drainHost(selectedHost.id)} className="rounded-xl border border-amber-500/40 px-4 py-2 text-sm text-amber-300">Drain server</button>
+                    {['failed', 'draining'].includes(selectedHost.status) ? (
+                      <button type="button" onClick={() => void archiveHost(selectedHost.id)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-300">Archive host</button>
+                    ) : null}
+                  </div>
                 ) : null}
               </div>
               <div className="mt-6 space-y-4 text-sm text-slate-300">
@@ -351,6 +386,11 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
 
       {mode === 'scale-events' ? (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+          {adminRole === 'super_admin' ? (
+            <div className="mb-4 flex justify-end">
+              <button type="button" onClick={() => void archiveStaleFailedNoise()} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-300">Archive stale failed noise</button>
+            </div>
+          ) : null}
           <table className="min-w-full text-left text-sm text-slate-300">
             <thead className="text-slate-500">
               <tr>

@@ -270,6 +270,7 @@ export const hostServers = pgTable('host_servers', {
   capacityThresholdPercent: integer('capacity_threshold_percent').notNull().default(80),
   readyAt: timestamp('ready_at', { withTimezone: false }),
   lastHeartbeatAt: timestamp('last_heartbeat_at', { withTimezone: false }),
+  archivedAt: timestamp('archived_at', { withTimezone: false }),
   createdAt: timestamp('created_at', { withTimezone: false }).notNull().defaultNow(),
 });
 
@@ -325,6 +326,7 @@ export const serverScaleEvents = pgTable('server_scale_events', {
   status: serverScaleEventStatusEnum('status').notNull(),
   failedReason: text('failed_reason'),
   completedAt: timestamp('completed_at', { withTimezone: false }),
+  archivedAt: timestamp('archived_at', { withTimezone: false }),
   createdAt: timestamp('created_at', { withTimezone: false }).notNull().defaultNow(),
 });
 

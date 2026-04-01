@@ -29,13 +29,14 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
   - fixed worker dev flow so the worker container no longer reruns install-on-start after a proper `docker compose up -d --force-recreate worker`
   - improved admin server-fleet observability: `/admin/servers`, `/admin/servers/:id`, and `/admin/scale-events` now expose provisioning-attempt context; frontend admin Server Fleet page now shows latest attempt status, cleanup result, failure reason, and worker run detail
   - added admin retry for failed provisioning: `POST /admin/scale-events/:id/retry` creates a fresh retry scale-event, preserves old failed history, and was verified to produce a new ready host from a previously failed event
+  - added operational cleanup/archive support: `host_servers.archived_at` and `server_scale_events.archived_at` (migration `0006_archive-hosts-and-scale-events`), archive host action, bulk archive of stale failed noise, and default admin views now hide archived records while preserving history
 - Remaining caveat: legacy pre-attempt historical rows remain old test artifacts; going forward `host_provision_attempts` is the authoritative recovery model.
 
 ## Next exact step
 
-- Reliability/admin recovery pass is checkpointed here.
-- Next likely operational improvement: add decommission/retire actions for failed or drained hosts, or broader cleanup/archive actions for stale failed operational noise.
-- After that, continue broader polish/integration work or intentionally resume real provider / real email / real Stripe follow-ups.
+- Reliability/admin cleanup pass is checkpointed here.
+- Next likely operational improvement: add decommission/retire semantics beyond archive (true provider-side retirement for drained/failed hosts), or continue broader polish/integration work.
+- After that, intentionally resume real provider / real email / real Stripe follow-ups when desired.
 
 ## Rules for this file
 

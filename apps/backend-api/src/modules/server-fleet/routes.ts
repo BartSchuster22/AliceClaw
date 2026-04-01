@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 
@@ -22,7 +22,7 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
     '/admin/servers',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin', 'provisioning_admin'])] },
     async () => {
-      const rows = await db.select().from(hostServers).orderBy(desc(hostServers.createdAt));
+      const rows = await db.select().from(hostServers).where(isNull(hostServers.archivedAt)).orderBy(desc(hostServers.createdAt));
 
       const hydrated = await Promise.all(
         rows.map(async (host) => {
@@ -206,6 +206,81 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
   );
 
   app.post(
+    '/admin/servers/:id/archive',
+    { preHandler: [requireAdmin, requireAdminRole(['super_admin'])] },
+    async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      if (!params.success) {
+        return reply.status(400).send({ error: 'Invalid host id' });
+      }
+
+      const [host] = await db.select().from(hostServers).where(eq(hostServers.id, params.data.id)).limit(1);
+      if (!host) {
+        return reply.status(404).send({ error: 'Host not found' });
+      }
+
+      if (!['failed', 'draining'].includes(host.status)) {
+        return reply.status(409).send({ error: 'Only failed or draining hosts can be archived' });
+      }
+
+      const [usage] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(containerInstances)
+        .where(
+          and(
+            eq(containerInstances.hostServerId, host.id),
+            inArray(containerInstances.status, [...activeRuntimeStatuses]),
+          ),
+        );
+
+      if (Number(usage?.count ?? 0) > 0) {
+        return reply.status(409).send({ error: 'Host still has active containers' });
+      }
+
+      await db.update(hostServers).set({ archivedAt: new Date() }).where(eq(hostServers.id, host.id));
+      return { success: true };
+    },
+  );
+
+  app.post(
+    '/admin/scale-events/archive-stale-failed',
+    { preHandler: [requireAdmin, requireAdminRole(['super_admin'])] },
+    async () => {
+      const staleBefore = new Date(Date.now() - 24 * 60 * 60 * 1000);
+
+      const archivedScaleEvents = await db
+        .update(serverScaleEvents)
+        .set({ archivedAt: new Date() })
+        .where(
+          and(
+            eq(serverScaleEvents.status, 'failed'),
+            isNull(serverScaleEvents.archivedAt),
+            lt(serverScaleEvents.createdAt, staleBefore),
+          ),
+        )
+        .returning({ id: serverScaleEvents.id });
+
+      const archivedHosts = await db
+        .update(hostServers)
+        .set({ archivedAt: new Date() })
+        .where(
+          and(
+            eq(hostServers.status, 'failed'),
+            isNull(hostServers.archivedAt),
+            lt(hostServers.createdAt, staleBefore),
+          ),
+        )
+        .returning({ id: hostServers.id });
+
+      return {
+        success: true,
+        archivedScaleEventCount: archivedScaleEvents.length,
+        archivedHostCount: archivedHosts.length,
+      };
+    },
+  );
+
+  app.post(
     '/admin/servers/:id/drain',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin'])] },
     async (request, reply) => {
@@ -323,7 +398,11 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
     '/admin/scale-events',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin', 'provisioning_admin'])] },
     async () => {
-      const events = await db.select().from(serverScaleEvents).orderBy(desc(serverScaleEvents.createdAt));
+      const events = await db
+        .select()
+        .from(serverScaleEvents)
+        .where(isNull(serverScaleEvents.archivedAt))
+        .orderBy(desc(serverScaleEvents.createdAt));
 
       return Promise.all(
         events.map(async (event) => {
