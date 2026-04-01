@@ -345,9 +345,9 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setFleetFilter('all')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'all' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>All hosts</button>
-              <button type="button" onClick={() => setFleetFilter('active')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'active' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Active only</button>
-              <button type="button" onClick={() => setFleetFilter('attention')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'attention' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Needs attention</button>
+              <button type="button" onClick={() => setFleetFilter('all')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'all' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>All hosts <span className="ml-1 text-xs opacity-70">({hosts.length})</span></button>
+              <button type="button" onClick={() => setFleetFilter('active')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'active' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Active only <span className="ml-1 text-xs opacity-70">({activeHosts.length})</span></button>
+              <button type="button" onClick={() => setFleetFilter('attention')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'attention' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Needs attention <span className="ml-1 text-xs opacity-70">({attentionHosts.length})</span></button>
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-400">
               <input type="checkbox" checked={showArchivedHosts} onChange={(event) => setShowArchivedHosts(event.target.checked)} />
@@ -402,14 +402,19 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                   </button>
                 ))}
               </div>
+              {!fleetHosts.filter((host) => isActiveHostStatus(host.status)).length ? (
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
+                  No active hosts match the current filter.
+                </div>
+              ) : null}
             </div>
 
-            {fleetHosts.some((host) => isAttentionHostStatus(host.status)) ? (
-              <div>
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-rose-200">Needs attention</h3>
-                  <p className="text-sm text-slate-500">Failed or unreachable hosts that may need retry, retirement, or archive actions.</p>
-                </div>
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-rose-200">Needs attention</h3>
+                <p className="text-sm text-slate-500">Failed or unreachable hosts that may need retry, retirement, or archive actions.</p>
+              </div>
+              {fleetHosts.some((host) => isAttentionHostStatus(host.status)) ? (
                 <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
                   {fleetHosts.filter((host) => isAttentionHostStatus(host.status)).map((host) => (
                     <button
@@ -438,8 +443,12 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                     </button>
                   ))}
                 </div>
-              </div>
-            ) : null}
+              ) : (
+                <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
+                  No hosts currently need attention for the selected filter.
+                </div>
+              )}
+            </div>
           </div>
 
           {selectedHost && detail ? (
@@ -546,9 +555,9 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
         <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap gap-2">
-              <button type="button" onClick={() => setScaleEventFilter('all')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'all' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>All events</button>
-              <button type="button" onClick={() => setScaleEventFilter('active')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'active' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Active only</button>
-              <button type="button" onClick={() => setScaleEventFilter('failed')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'failed' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Failed only</button>
+              <button type="button" onClick={() => setScaleEventFilter('all')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'all' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>All events <span className="ml-1 text-xs opacity-70">({scaleEvents.length})</span></button>
+              <button type="button" onClick={() => setScaleEventFilter('active')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'active' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Active only <span className="ml-1 text-xs opacity-70">({activeScaleEvents.length})</span></button>
+              <button type="button" onClick={() => setScaleEventFilter('failed')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'failed' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Failed only <span className="ml-1 text-xs opacity-70">({failedScaleEvents.length})</span></button>
             </div>
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 text-sm text-slate-400">
@@ -612,48 +621,54 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
 
           <div>
             <h3 className="mb-3 text-lg font-semibold text-slate-100">Recent scale activity</h3>
-            <table className="min-w-full text-left text-sm text-slate-300">
-              <thead className="text-slate-500">
-                <tr>
-                  <th className="pb-3">Reason</th>
-                  <th className="pb-3">Status</th>
-                  <th className="pb-3">Created</th>
-                  <th className="pb-3">Error</th>
-                  <th className="pb-3">Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {visibleScaleEvents.map((event) => (
-                  <tr key={event.id} className="border-t border-slate-800 align-top">
-                    <td className="py-3">{event.triggerReason}</td>
-                    <td className="py-3">{event.status}</td>
-                    <td className="py-3">{new Date(event.createdAt).toLocaleString()}</td>
-                    <td className="py-3">
-                      <div>{event.failedReason ?? '—'}</div>
-                      {event.latestProvisionAttempt ? (
-                        <div className="mt-2 space-y-2 text-xs text-slate-500">
-                          <div className="flex flex-wrap gap-2">
-                            <span className={`rounded-full px-2 py-1 ${getAttemptStatusStyle(event.latestProvisionAttempt.status)}`}>Attempt {event.latestProvisionAttempt.status}</span>
-                            <span className={`rounded-full px-2 py-1 ${getCleanupStatusStyle(event.latestProvisionAttempt.cleanupStatus)}`}>Cleanup {event.latestProvisionAttempt.cleanupStatus}</span>
-                          </div>
-                          <div>Last update: {formatTime(event.latestProvisionAttempt.finishedAt ?? event.latestProvisionAttempt.createdAt ?? null)}</div>
-                          {event.latestProvisionAttempt.failureReason ? <div>Attempt error: {event.latestProvisionAttempt.failureReason}</div> : null}
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="py-3">
-                      {adminRole === 'super_admin' && event.status === 'failed' ? (
-                        <button type="button" onClick={() => void retryScaleEvent(event.id)} className="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-300">
-                          Retry
-                        </button>
-                      ) : (
-                        <span className="text-slate-600">—</span>
-                      )}
-                    </td>
+            {visibleScaleEvents.length ? (
+              <table className="min-w-full text-left text-sm text-slate-300">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="pb-3">Reason</th>
+                    <th className="pb-3">Status</th>
+                    <th className="pb-3">Created</th>
+                    <th className="pb-3">Error</th>
+                    <th className="pb-3">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {visibleScaleEvents.map((event) => (
+                    <tr key={event.id} className="border-t border-slate-800 align-top">
+                      <td className="py-3">{event.triggerReason}</td>
+                      <td className="py-3">{event.status}</td>
+                      <td className="py-3">{new Date(event.createdAt).toLocaleString()}</td>
+                      <td className="py-3">
+                        <div>{event.failedReason ?? '—'}</div>
+                        {event.latestProvisionAttempt ? (
+                          <div className="mt-2 space-y-2 text-xs text-slate-500">
+                            <div className="flex flex-wrap gap-2">
+                              <span className={`rounded-full px-2 py-1 ${getAttemptStatusStyle(event.latestProvisionAttempt.status)}`}>Attempt {event.latestProvisionAttempt.status}</span>
+                              <span className={`rounded-full px-2 py-1 ${getCleanupStatusStyle(event.latestProvisionAttempt.cleanupStatus)}`}>Cleanup {event.latestProvisionAttempt.cleanupStatus}</span>
+                            </div>
+                            <div>Last update: {formatTime(event.latestProvisionAttempt.finishedAt ?? event.latestProvisionAttempt.createdAt ?? null)}</div>
+                            {event.latestProvisionAttempt.failureReason ? <div>Attempt error: {event.latestProvisionAttempt.failureReason}</div> : null}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="py-3">
+                        {adminRole === 'super_admin' && event.status === 'failed' ? (
+                          <button type="button" onClick={() => void retryScaleEvent(event.id)} className="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-300">
+                            Retry
+                          </button>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-900/40 p-6 text-sm text-slate-400">
+                No scale events match the current filter.
+              </div>
+            )}
           </div>
         </div>
       ) : null}
