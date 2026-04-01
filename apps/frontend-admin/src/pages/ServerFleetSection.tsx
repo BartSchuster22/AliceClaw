@@ -207,6 +207,22 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
     await loadFleet();
   }
 
+  async function retireHost(hostId: string) {
+    setError(null);
+    const response = await authorizedFetch(`/admin/servers/${hostId}/retire`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      setError(await response.text());
+      return;
+    }
+
+    setSelectedHost(null);
+    setDetail(null);
+    await loadFleet();
+  }
+
   async function archiveHost(hostId: string) {
     setError(null);
     const response = await authorizedFetch(`/admin/servers/${hostId}/archive`, {
@@ -302,7 +318,10 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                   <div className="flex gap-2">
                     <button type="button" onClick={() => void drainHost(selectedHost.id)} className="rounded-xl border border-amber-500/40 px-4 py-2 text-sm text-amber-300">Drain server</button>
                     {['failed', 'draining'].includes(selectedHost.status) ? (
-                      <button type="button" onClick={() => void archiveHost(selectedHost.id)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-300">Archive host</button>
+                      <>
+                        <button type="button" onClick={() => void retireHost(selectedHost.id)} className="rounded-xl border border-rose-500/40 px-4 py-2 text-sm text-rose-300">Retire host</button>
+                        <button type="button" onClick={() => void archiveHost(selectedHost.id)} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-300">Archive host</button>
+                      </>
                     ) : null}
                   </div>
                 ) : null}

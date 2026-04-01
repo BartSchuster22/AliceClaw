@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { requireAdmin, requireAdminRole } from '../../admin-auth.js';
 import { db } from '@psi/db';
 import { containerInstances, hostProvisionAttempts, hostServers, serverScaleEvents, serverTemplates } from '@psi/db/schema';
-import { enqueueProvisionHostServerJob } from '../../lib/queues.js';
+import { enqueueProvisionHostServerJob, enqueueRetireHostServerJob } from '../../lib/queues.js';
 
 const activeRuntimeStatuses = ['allocating', 'deploying', 'starting', 'running', 'unhealthy'] as const;
 
@@ -202,6 +202,44 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
         originalScaleEventId: scaleEvent.id,
         retryScaleEventId: retryScaleEvent.id,
       };
+    },
+  );
+
+  app.post(
+    '/admin/servers/:id/retire',
+    { preHandler: [requireAdmin, requireAdminRole(['super_admin'])] },
+    async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      if (!params.success) {
+        return reply.status(400).send({ error: 'Invalid host id' });
+      }
+
+      const [host] = await db.select().from(hostServers).where(eq(hostServers.id, params.data.id)).limit(1);
+      if (!host) {
+        return reply.status(404).send({ error: 'Host not found' });
+      }
+
+      if (!['failed', 'draining'].includes(host.status)) {
+        return reply.status(409).send({ error: 'Only failed or draining hosts can be retired' });
+      }
+
+      const [usage] = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(containerInstances)
+        .where(
+          and(
+            eq(containerInstances.hostServerId, host.id),
+            inArray(containerInstances.status, [...activeRuntimeStatuses]),
+          ),
+        );
+
+      if (Number(usage?.count ?? 0) > 0) {
+        return reply.status(409).send({ error: 'Host still has active containers' });
+      }
+
+      await enqueueRetireHostServerJob({ hostServerId: host.id });
+
+      return { success: true, queued: true };
     },
   );
 

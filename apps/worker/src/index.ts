@@ -5,6 +5,7 @@ import { createDeployContainerWorker } from './jobs/deploy-container.js';
 import { createHealthCheckContainersWorker, registerHealthCheckContainersJob } from './jobs/health-check-containers.js';
 import { createProvisionHostServerWorker, reconcileStaleHostProvisionAttempts } from './jobs/provision-host-server.js';
 import { createProvisionInstanceWorker } from './jobs/provision-instance.js';
+import { createRetireHostServerWorker } from './jobs/retire-host-server.js';
 import { createVestReferralRewardWorker } from './jobs/vest-referral-reward.js';
 
 process.env.WORKER_RUN_ID = process.env.WORKER_RUN_ID ?? randomUUID();
@@ -15,6 +16,7 @@ await reconcileStaleHostProvisionAttempts(process.env.WORKER_RUN_ID);
 await registerHealthCheckContainersJob();
 
 const containerLifecycleWorkers = createContainerLifecycleWorkers();
+const retireHostServerWorker = createRetireHostServerWorker();
 
 const workerRuntimes = [
   createDeployContainerWorker(),
@@ -22,6 +24,7 @@ const workerRuntimes = [
   createProvisionHostServerWorker(),
   createProvisionInstanceWorker(),
   createVestReferralRewardWorker(),
+  retireHostServerWorker,
   {
     worker: containerLifecycleWorkers.stopWorker,
     close: containerLifecycleWorkers.close,

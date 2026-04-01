@@ -33,3 +33,7 @@ export async function enqueueDeleteContainerJob(payload: { containerInstanceId: 
 export async function enqueueProvisionHostServerJob(payload: { scaleEventId: string }) {
   return withQueue('provision-host-server', (queue) => queue.add('provision-host-server', payload));
 }
+
+export async function enqueueRetireHostServerJob(payload: { hostServerId: string }) {
+  return withQueue('retire-host-server', (queue) => queue.add('retire-host-server', payload));
+}

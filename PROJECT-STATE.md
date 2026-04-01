@@ -30,13 +30,14 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
   - improved admin server-fleet observability: `/admin/servers`, `/admin/servers/:id`, and `/admin/scale-events` now expose provisioning-attempt context; frontend admin Server Fleet page now shows latest attempt status, cleanup result, failure reason, and worker run detail
   - added admin retry for failed provisioning: `POST /admin/scale-events/:id/retry` creates a fresh retry scale-event, preserves old failed history, and was verified to produce a new ready host from a previously failed event
   - added operational cleanup/archive support: `host_servers.archived_at` and `server_scale_events.archived_at` (migration `0006_archive-hosts-and-scale-events`), archive host action, bulk archive of stale failed noise, and default admin views now hide archived records while preserving history
+  - added true queued host retirement/decommission flow: `POST /admin/servers/:id/retire` now validates host state/no active containers, enqueues worker-side provider cleanup, and archives the retired host out of active fleet views; verified against failed host `89c15cc8-4b0f-4ac2-8f5b-7b1f03722a39`
 - Remaining caveat: legacy pre-attempt historical rows remain old test artifacts; going forward `host_provision_attempts` is the authoritative recovery model.
 
 ## Next exact step
 
-- Reliability/admin cleanup pass is checkpointed here.
-- Next likely operational improvement: add decommission/retire semantics beyond archive (true provider-side retirement for drained/failed hosts), or continue broader polish/integration work.
-- After that, intentionally resume real provider / real email / real Stripe follow-ups when desired.
+- Reliability/admin lifecycle pass is checkpointed here.
+- Next likely operational improvement: broader fleet UX polish (clearer separation of active vs archived history, richer attempt/scale-event filtering) or intentionally resume real provider / real email / real Stripe follow-ups.
+- If staying in fleet operations, prioritize operator clarity over new background complexity.
 
 ## Rules for this file
 
