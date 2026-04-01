@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { requireAuth } from '../../auth.js';
 import { db } from '@psi/db';
 import {
+  containerInstances,
   profiles,
   products,
   provisioningJobs,
@@ -13,8 +14,8 @@ import {
   referrals,
   subscriptions,
   users,
-  vpsInstances,
 } from '@psi/db/schema';
+import { enqueueDeleteContainerJob, enqueueDeployContainerJob, enqueueStopContainerJob } from '../../lib/queues.js';
 
 const updateProfileSchema = z.object({
   full_name: z.string().min(1).optional(),
@@ -27,6 +28,29 @@ const changePasswordSchema = z.object({
   currentPassword: z.string().min(1),
   newPassword: z.string().min(8),
 });
+
+function maskRuntimeFields<
+  T extends {
+    status?: string;
+    containerStatus?: string | null;
+    containerId?: string | null;
+    agentUrl?: string | null;
+    startedAt?: string | Date | null;
+  },
+>(instance: T) {
+  const effectiveStatus = instance.containerStatus ?? instance.status;
+
+  if (!effectiveStatus || !['stopped', 'stopping', 'deleted', 'deleting', 'failed'].includes(effectiveStatus)) {
+    return instance;
+  }
+
+  return {
+    ...instance,
+    containerId: 'containerId' in instance ? null : instance.containerId,
+    agentUrl: 'agentUrl' in instance ? null : instance.agentUrl,
+    startedAt: 'startedAt' in instance ? null : instance.startedAt,
+  };
+}
 
 export async function registerUserRoutes(app: FastifyInstance) {
   app.get('/user/profile', { preHandler: requireAuth }, async (request, reply) => {
@@ -129,17 +153,17 @@ export async function registerUserRoutes(app: FastifyInstance) {
         productSlug: products.slug,
         priceCents: products.priceCents,
         billingCycle: products.billingCycle,
-        vpsInstanceId: vpsInstances.id,
-        vpsStatus: vpsInstances.status,
-        ipAddress: vpsInstances.ipAddress,
-        region: vpsInstances.region,
+        containerInstanceId: containerInstances.id,
+        containerStatus: containerInstances.status,
+        agentUrl: containerInstances.agentUrl,
+        startedAt: containerInstances.startedAt,
       })
       .from(subscriptions)
       .innerJoin(products, eq(products.id, subscriptions.productId))
-      .leftJoin(vpsInstances, eq(vpsInstances.subscriptionId, subscriptions.id))
+      .leftJoin(containerInstances, eq(containerInstances.subscriptionId, subscriptions.id))
       .where(eq(subscriptions.userId, request.user.sub));
 
-    return rows;
+    return rows.map((row) => maskRuntimeFields(row));
   });
 
   app.get('/user/instances/:id/status', { preHandler: requireAuth }, async (request, reply) => {
@@ -151,16 +175,16 @@ export async function registerUserRoutes(app: FastifyInstance) {
 
     const [instance] = await db
       .select({
-        id: vpsInstances.id,
-        status: vpsInstances.status,
-        providerInstanceId: vpsInstances.providerInstanceId,
-        ipAddress: vpsInstances.ipAddress,
-        region: vpsInstances.region,
-        subscriptionId: vpsInstances.subscriptionId,
+        id: containerInstances.id,
+        status: containerInstances.status,
+        containerId: containerInstances.containerId,
+        agentUrl: containerInstances.agentUrl,
+        hostServerId: containerInstances.hostServerId,
+        subscriptionId: containerInstances.subscriptionId,
       })
-      .from(vpsInstances)
-      .innerJoin(subscriptions, eq(subscriptions.id, vpsInstances.subscriptionId))
-      .where(and(eq(vpsInstances.id, params.data.id), eq(subscriptions.userId, request.user.sub)))
+      .from(containerInstances)
+      .innerJoin(subscriptions, eq(subscriptions.id, containerInstances.subscriptionId))
+      .where(and(eq(containerInstances.id, params.data.id), eq(subscriptions.userId, request.user.sub)))
       .limit(1);
 
     if (!instance) {
@@ -170,14 +194,123 @@ export async function registerUserRoutes(app: FastifyInstance) {
     const [latestJob] = await db
       .select()
       .from(provisioningJobs)
-      .where(eq(provisioningJobs.vpsInstanceId, instance.id))
+      .where(eq(provisioningJobs.containerInstanceId, instance.id))
       .orderBy(desc(provisioningJobs.createdAt))
       .limit(1);
 
     return {
-      instance,
+      instance: maskRuntimeFields(instance),
       provisioningJob: latestJob ?? null,
     };
+  });
+
+  app.post('/user/instances/:id/stop', { preHandler: requireAuth }, async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+
+    if (!params.success) {
+      return reply.status(400).send({ error: 'Invalid instance id' });
+    }
+
+    const [instance] = await db
+      .select()
+      .from(containerInstances)
+      .innerJoin(subscriptions, eq(subscriptions.id, containerInstances.subscriptionId))
+      .where(and(eq(containerInstances.id, params.data.id), eq(subscriptions.userId, request.user.sub)))
+      .limit(1);
+
+    if (!instance?.container_instances) {
+      return reply.status(404).send({ error: 'Instance not found' });
+    }
+
+    if (!['running', 'unhealthy'].includes(instance.container_instances.status)) {
+      return reply.status(409).send({ error: 'Instance is not stoppable' });
+    }
+
+    await db
+      .update(containerInstances)
+      .set({ status: 'stopping' })
+      .where(eq(containerInstances.id, instance.container_instances.id));
+
+    await enqueueStopContainerJob({
+      containerInstanceId: instance.container_instances.id,
+    });
+
+    return { success: true };
+  });
+
+  app.post('/user/instances/:id/start', { preHandler: requireAuth }, async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+
+    if (!params.success) {
+      return reply.status(400).send({ error: 'Invalid instance id' });
+    }
+
+    const [instance] = await db
+      .select()
+      .from(containerInstances)
+      .innerJoin(subscriptions, eq(subscriptions.id, containerInstances.subscriptionId))
+      .where(and(eq(containerInstances.id, params.data.id), eq(subscriptions.userId, request.user.sub)))
+      .limit(1);
+
+    if (!instance?.container_instances || !instance.subscriptions) {
+      return reply.status(404).send({ error: 'Instance not found' });
+    }
+
+    if (instance.container_instances.status !== 'stopped') {
+      return reply.status(409).send({ error: 'Instance is not resumable' });
+    }
+
+    if (instance.subscriptions.status !== 'active') {
+      return reply.status(409).send({ error: 'Subscription is not active' });
+    }
+
+    await db
+      .update(containerInstances)
+      .set({
+        status: 'queued',
+        deploymentRequestedAt: new Date(),
+      })
+      .where(eq(containerInstances.id, instance.container_instances.id));
+
+    await enqueueDeployContainerJob({
+      containerInstanceId: instance.container_instances.id,
+    });
+
+    return { success: true };
+  });
+
+  app.post('/user/instances/:id/delete', { preHandler: requireAuth }, async (request, reply) => {
+    const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+
+    if (!params.success) {
+      return reply.status(400).send({ error: 'Invalid instance id' });
+    }
+
+    const [instance] = await db
+      .select()
+      .from(containerInstances)
+      .innerJoin(subscriptions, eq(subscriptions.id, containerInstances.subscriptionId))
+      .where(and(eq(containerInstances.id, params.data.id), eq(subscriptions.userId, request.user.sub)))
+      .limit(1);
+
+    if (!instance?.container_instances) {
+      return reply.status(404).send({ error: 'Instance not found' });
+    }
+
+    if (['deleting', 'deleted'].includes(instance.container_instances.status)) {
+      return reply.status(409).send({ error: 'Instance is already being deleted' });
+    }
+
+    await db
+      .update(containerInstances)
+      .set({ status: 'deleting' })
+      .where(eq(containerInstances.id, instance.container_instances.id));
+
+    await enqueueDeleteContainerJob({
+      containerInstanceId: instance.container_instances.id,
+    });
+
+    return { success: true };
   });
 
   app.get('/user/referrals', { preHandler: requireAuth }, async (request) => {
@@ -228,7 +361,7 @@ export async function registerUserRoutes(app: FastifyInstance) {
 
     return {
       referralCode: user?.referralCode ?? null,
-      referralLink: `${process.env.FRONTEND_WEB_URL ?? 'https://web.canariaslibre.com'}?ref=${user?.referralCode ?? ''}`,
+      referralLink: `${process.env.FRONTEND_WEB_URL ?? 'https://aquiero.com'}?ref=${user?.referralCode ?? ''}`,
       activeCount,
       convertedCount,
       totalCreditCents,

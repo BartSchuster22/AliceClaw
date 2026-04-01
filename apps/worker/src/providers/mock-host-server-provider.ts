@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 
-import type { VpsProvider } from './vps-provider.js';
+import type { HostServerProvider } from './host-server-provider.js';
 
 const statusCalls = new Map<string, number>();
 
@@ -12,17 +12,17 @@ function randomIpOctet() {
   return Math.floor(Math.random() * (254 - 2 + 1)) + 2;
 }
 
-export class MockVpsAdapter implements VpsProvider {
-  async createServer(): Promise<{ providerId: string; ip: string }> {
+export class MockHostServerProvider implements HostServerProvider {
+  async provisionHostServer(): Promise<{ providerId: string; ipAddress: string }> {
     await delay(3000);
 
     return {
       providerId: `mock-${randomUUID()}`,
-      ip: `192.168.1.${randomIpOctet()}`,
+      ipAddress: `192.168.1.${randomIpOctet()}`,
     };
   }
 
-  async getServerStatus(providerId: string): Promise<'starting' | 'running' | 'error'> {
+  async getHostServerStatus(providerId: string): Promise<'starting' | 'running' | 'error'> {
     const calls = (statusCalls.get(providerId) ?? 0) + 1;
     statusCalls.set(providerId, calls);
 
@@ -33,7 +33,7 @@ export class MockVpsAdapter implements VpsProvider {
     return 'running';
   }
 
-  async deleteServer(providerId: string): Promise<void> {
+  async deleteHostServer(providerId: string): Promise<void> {
     console.log(`mock delete ${providerId}`);
   }
 }

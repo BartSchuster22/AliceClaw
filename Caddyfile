@@ -1,19 +1,23 @@
-{
-  email admin@canariaslibre.com
+aquiero.com {
+  handle /api/auth/* {
+    uri strip_prefix /api
+    reverse_proxy backend-api:4000
+  }
+
+  handle /api/* {
+    uri strip_prefix /api
+    reverse_proxy backend-api:4000
+  }
+
+  handle {
+    reverse_proxy frontend-web:5173
+  }
 }
 
-web.canariaslibre.com {
-  reverse_proxy frontend-web:5173
+app.aquiero.com {
+  reverse_proxy frontend-app:5174
 }
 
-app.canariaslibre.com {
-  reverse_proxy frontend-app:5173
-}
-
-admn.canariaslibre.com {
+admin.aquiero.com {
   reverse_proxy frontend-admin:5173
-}
-
-api.canariaslibre.com {
-  reverse_proxy backend-api:4000
 }

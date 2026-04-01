@@ -8,6 +8,24 @@
   background: #020617;
 }
 
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
   margin: 0;
+  background: #020617;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
 }

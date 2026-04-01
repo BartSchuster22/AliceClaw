@@ -11,3 +11,10 @@ packages/*/node_modules
 apps/*/dist
 packages/*/dist
 postgres-data
+.openclaw/
+AGENTS.md
+MEMORY.md
+SOUL.md
+USER.md
+memory/
+*.tsbuildinfo

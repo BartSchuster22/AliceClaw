@@ -27,19 +27,19 @@ export type UserSubscription = {
   productSlug: string;
   priceCents: number;
   billingCycle: 'monthly' | 'annual';
-  vpsInstanceId: string | null;
-  vpsStatus: string | null;
-  ipAddress: string | null;
-  region: string | null;
+  containerInstanceId: string | null;
+  containerStatus: string | null;
+  agentUrl: string | null;
+  startedAt: string | null;
 };
 
 export type InstanceStatusResponse = {
   instance: {
     id: string;
     status: string;
-    providerInstanceId: string | null;
-    ipAddress: string | null;
-    region: string | null;
+    containerId: string | null;
+    agentUrl: string | null;
+    hostServerId: string | null;
     subscriptionId: string;
   };
   provisioningJob: {

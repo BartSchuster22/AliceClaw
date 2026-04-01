@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 
 import { db } from '@psi/db';
 import { cmsContent } from '@psi/db/schema';
+import { getCachedPublicCms, setCachedPublicCms } from './cache.js';
 
 const PUBLIC_CMS_KEYS = [
   'hero_headline',
@@ -15,6 +16,11 @@ const PUBLIC_CMS_KEYS = [
 
 export async function registerCmsRoutes(app: FastifyInstance) {
   app.get('/cms/public', async () => {
+    const cached = await getCachedPublicCms();
+    if (cached) {
+      return cached;
+    }
+
     const rows = await db.select().from(cmsContent).where(inArray(cmsContent.key, [...PUBLIC_CMS_KEYS]));
 
     const payload: Record<string, unknown> = {};
@@ -31,6 +37,7 @@ export async function registerCmsRoutes(app: FastifyInstance) {
       }
     }
 
+    await setCachedPublicCms(payload);
     return payload;
   });
 }

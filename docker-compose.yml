@@ -1,3 +1,11 @@
+
+
+
+
+
+
+
+
 services:
   caddy:
     image: caddy:2
@@ -26,7 +34,7 @@ services:
       - "5173"
     environment:
       CI: "true"
-      VITE_API_URL: https://api.canariaslibre.com
+      VITE_API_URL: https://aquiero.com/api
     volumes:
       - .:/workspace
       - frontend_web_node_modules:/workspace/node_modules
@@ -46,7 +54,7 @@ services:
       - "5173"
     environment:
       CI: "true"
-      VITE_API_URL: https://api.canariaslibre.com
+      VITE_API_URL: https://aquiero.com/api
     volumes:
       - .:/workspace
       - frontend_app_node_modules:/workspace/node_modules
@@ -66,6 +74,7 @@ services:
       - "5173"
     environment:
       CI: "true"
+      VITE_API_URL: https://aquiero.com/api
     volumes:
       - .:/workspace
       - frontend_admin_node_modules:/workspace/node_modules
@@ -86,9 +95,16 @@ services:
       PORT: 4000
       HOST: 0.0.0.0
       JWT_SECRET: dev_jwt_secret_change_me
-      COOKIE_DOMAIN: .canariaslibre.com
+      COOKIE_DOMAIN: .aquiero.com
       DATABASE_URL: postgres://openclaw:dev_password@postgres:5432/openclaw
       REDIS_URL: redis://redis:6379
+      FRONTEND_WEB_URL: https://aquiero.com
+      FRONTEND_APP_URL: https://app.aquiero.com
+      FRONTEND_ADMIN_URL: https://admin.aquiero.com
+      STRIPE_SECRET_KEY: sk_test_51TGK0cD1FELOPwNPFye4NpZm5rUeyCEJUkmpWEzSBwf5Iv8QgUdtuPI3DEpdVuKGMrKJMaOpQz28nP7BojqvHGLv00yM5RDu2Z
+      STRIPE_WEBHOOK_SECRET: whsec_B4C1Axyo0ML0XmEUeNRjrd9c3JyeUUxy
+
+
     expose:
       - "4000"
     healthcheck:
@@ -119,6 +135,8 @@ services:
       CI: "true"
       DATABASE_URL: postgres://openclaw:dev_password@postgres:5432/openclaw
       REDIS_URL: redis://redis:6379
+      POSTMARK_API_TOKEN: 3d0b921d-6c3c-4eaf-830c-f7088bbb52b8
+      POSTMARK_FROM_EMAIL: postmark@aquiero.com
     volumes:
       - .:/workspace
       - worker_node_modules:/workspace/node_modules
@@ -148,7 +166,7 @@ services:
 
   redis:
     image: redis:7
-    command: ["redis-server", "--appendonly", "no", "--protected-mode", "yes", "--bind", "0.0.0.0"]
+    command: ["redis-server", "--appendonly", "no", "--protected-mode", "no", "--bind", "0.0.0.0"]
     expose:
       - "6379"
     healthcheck:

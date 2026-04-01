@@ -65,7 +65,7 @@ function ProductCard({ product, footerNote }: { product: Product; footerNote?: s
       {footerNote ? <p className="mt-4 text-xs text-slate-400">{footerNote}</p> : null}
       <div className="mt-6 flex gap-3">
         <a
-          href={`/checkout?product_id=${product.id}`}
+          href={`https://app.aquiero.com/checkout?product_id=${product.id}`}
           className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-emerald-400"
         >
           Get started
@@ -144,7 +144,7 @@ function Homepage() {
               Share your referral code and collect subscription credits when someone signs up through you.
             </p>
             <a
-              href="/dashboard/referrals"
+              href="https://app.aquiero.com/dashboard/referrals"
               className="mt-6 inline-flex items-center justify-center rounded-lg border border-emerald-400/30 px-4 py-2 text-sm font-medium text-emerald-300 transition hover:border-emerald-300 hover:text-emerald-200"
             >
               View referral dashboard
@@ -188,7 +188,7 @@ function PricingPage() {
                 ))}
               </ul>
               <a
-                href={`/checkout?product_id=${product.id}`}
+                href={`https://app.aquiero.com/checkout?product_id=${product.id}`}
                 className="mt-6 inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
               >
                 Get started
@@ -244,7 +244,7 @@ function ProductPage() {
                 ))}
               </ul>
               <a
-                href={`/checkout?product_id=${product.id}`}
+                href={`https://app.aquiero.com/checkout?product_id=${product.id}`}
                 className="mt-6 inline-flex w-full items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
               >
                 Get started
@@ -257,7 +257,7 @@ function ProductPage() {
   );
 }
 
-function CheckoutPage() {
+function LegacyCheckoutPageOld() {
   const [searchParams] = useSearchParams();
   const productId = searchParams.get('product_id') ?? '';
   const referralCode = getReferralCode();
@@ -476,6 +476,32 @@ function CheckoutPage() {
   );
 }
 
+function LegacyCheckoutRedirectPage() {
+  const [searchParams] = useSearchParams();
+  const query = searchParams.toString();
+  const target = query ? `https://app.aquiero.com/checkout?${query}` : 'https://app.aquiero.com/checkout';
+
+  useEffect(() => {
+    window.location.replace(target);
+  }, [target]);
+
+  return (
+    <AppShell>
+      <main className="mx-auto max-w-3xl px-4 py-20 sm:px-6 lg:px-8">
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8">
+          <h1 className="text-3xl font-semibold text-white">Redirecting to secure checkout…</h1>
+          <p className="mt-4 text-sm text-slate-300">
+            Checkout now lives on app.aquiero.com so the full customer flow stays in one place.
+          </p>
+          <a href={target} className="mt-6 inline-flex rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">
+            Continue to checkout
+          </a>
+        </div>
+      </main>
+    </AppShell>
+  );
+}
+
 export default function App() {
   const location = useLocation();
 
@@ -488,7 +514,7 @@ export default function App() {
       <Route path="/" element={<Homepage />} />
       <Route path="/pricing" element={<PricingPage />} />
       <Route path="/products/:slug" element={<ProductPage />} />
-      <Route path="/checkout" element={<CheckoutPage />} />
+      <Route path="/checkout" element={<LegacyCheckoutRedirectPage />} />
     </Routes>
   );
 }

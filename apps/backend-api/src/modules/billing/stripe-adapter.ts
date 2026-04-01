@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 
 import { db } from '@psi/db';
-import { billingEventsLog, products, subscriptions } from '@psi/db/schema';
+import { products, subscriptions } from '@psi/db/schema';
 
 import type { BillingEvent, BillingProvider } from './types.js';
 import { BillingEventEmitter } from './emitter.js';
@@ -29,11 +29,11 @@ function getWebhookSecret() {
 }
 
 function getFrontendAppUrl() {
-  return process.env.FRONTEND_APP_URL ?? 'https://app.canariaslibre.com';
+  return process.env.FRONTEND_APP_URL ?? 'https://app.aquiero.com';
 }
 
 function getFrontendWebUrl() {
-  return process.env.FRONTEND_WEB_URL ?? 'https://web.canariaslibre.com';
+  return process.env.FRONTEND_WEB_URL ?? 'https://aquiero.com';
 }
 
 export class StripeAdapter implements BillingProvider {
@@ -55,6 +55,7 @@ export class StripeAdapter implements BillingProvider {
       mode: 'subscription',
       success_url: `${getFrontendAppUrl()}/onboarding?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${getFrontendWebUrl()}/pricing`,
+      customer_creation: 'always',
       metadata: {
         userId: params.userId,
         productId: params.productId,
@@ -112,15 +113,6 @@ export class StripeAdapter implements BillingProvider {
     const normalizedEvent = await this.mapStripeEvent(event);
 
     if (normalizedEvent) {
-      await db.insert(billingEventsLog).values({
-        subscriptionId: normalizedEvent.subscriptionId,
-        eventType: event.type,
-        provider: 'stripe',
-        providerEventId: event.id,
-        payload: event as unknown as Record<string, unknown>,
-        processedAt: new Date(),
-      });
-
       queueMicrotask(() => {
         this.eventEmitter.emit(normalizedEvent);
       });
@@ -145,11 +137,9 @@ export class StripeAdapter implements BillingProvider {
           .where(eq(subscriptions.billingProviderSubscriptionId, billingProviderSubscriptionId))
           .limit(1);
 
-        const subscriptionId = existingSubscription?.id ?? randomUUID();
-
         return {
           type: 'subscription.activated',
-          subscriptionId,
+          subscriptionId: existingSubscription?.id ?? randomUUID(),
           billingProviderSubscriptionId,
           userId,
           productId,

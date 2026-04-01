@@ -71,7 +71,7 @@ function verifyRefreshToken(token: string): AuthenticatedUser {
 }
 
 function getCookieDomain() {
-  return process.env.COOKIE_DOMAIN ?? '.canariaslibre.com';
+  return process.env.COOKIE_DOMAIN ?? '.aquiero.com';
 }
 
 function setRefreshTokenCookie(reply: FastifyReply, token: string) {

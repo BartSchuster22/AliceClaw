@@ -1,7 +1,6 @@
-import { randomBytes } from 'node:crypto';
-
 import { Worker } from 'bullmq';
 import { eq } from 'drizzle-orm';
+import type IORedis from 'ioredis';
 
 import { db } from '@psi/db';
 import {
@@ -13,8 +12,8 @@ import {
   vpsInstances,
 } from '@psi/db/schema';
 
-import { getVpsProvider } from '../providers/index.js';
-import { getRedisConnection } from '../lib/redis.js';
+import { getHostServerProvider } from '../providers/index.js';
+import { createRedisConnection, closeRedisConnection } from '../lib/redis.js';
 import { notificationService } from '../services/notification-service.js';
 
 export type ProvisionInstanceJobPayload = {
@@ -23,29 +22,39 @@ export type ProvisionInstanceJobPayload = {
   jobId: string;
 };
 
+export type ProvisionInstanceWorkerRuntime = {
+  worker: Worker<ProvisionInstanceJobPayload>;
+  close: () => Promise<void>;
+};
+
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function generateAppPassword() {
-  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let password = '';
-
-  while (password.length < 16) {
-    password += alphabet[randomBytes(1)[0] % alphabet.length];
-  }
-
-  return password;
 }
 
 function getProvisioningPublicKey() {
   const key = process.env.PROVISIONING_SSH_PUBLIC_KEY;
 
-  if (!key) {
-    throw new Error('PROVISIONING_SSH_PUBLIC_KEY is required');
+  if (key) {
+    return key;
   }
 
-  return key;
+  return null;
+}
+
+function getProvisioningPreflightError() {
+  if (!process.env.PROVISIONING_SSH_PUBLIC_KEY) {
+    return 'Provisioning is not configured: PROVISIONING_SSH_PUBLIC_KEY is missing';
+  }
+
+  if (!process.env.POSTMARK_API_TOKEN) {
+    return 'Provisioning is not configured: POSTMARK_API_TOKEN is missing';
+  }
+
+  if (!process.env.POSTMARK_FROM_EMAIL) {
+    return 'Provisioning is not configured: POSTMARK_FROM_EMAIL is missing';
+  }
+
+  return null;
 }
 
 async function appendJobLog(jobId: string, line: string) {
@@ -85,40 +94,70 @@ async function updateStep(params: {
   await appendJobLog(params.jobId, params.logLine);
 }
 
-async function markFailed(params: { vpsInstanceId: string; jobId: string; errorMessage: string }) {
-  await db
-    .update(vpsInstances)
-    .set({ status: 'failed' })
-    .where(eq(vpsInstances.id, params.vpsInstanceId));
+async function markFailed(params: { vpsInstanceId?: string; jobId?: string; errorMessage: string }) {
+  if (params.vpsInstanceId) {
+    await db
+      .update(vpsInstances)
+      .set({ status: 'failed' })
+      .where(eq(vpsInstances.id, params.vpsInstanceId));
+  }
 
-  await db
-    .update(provisioningJobs)
-    .set({
-      status: 'failed',
-      errorMessage: params.errorMessage,
-      finishedAt: new Date(),
-    })
-    .where(eq(provisioningJobs.id, params.jobId));
+  if (params.jobId) {
+    await db
+      .update(provisioningJobs)
+      .set({
+        status: 'failed',
+        errorMessage: params.errorMessage,
+        finishedAt: new Date(),
+      })
+      .where(eq(provisioningJobs.id, params.jobId));
 
-  await appendJobLog(params.jobId, `ERROR: ${params.errorMessage}`);
-  console.error('[provision-instance]', params.errorMessage);
+    await appendJobLog(params.jobId, `ERROR: ${params.errorMessage}`);
+  }
+
+  console.error('[provision-instance]', params.errorMessage, {
+    jobId: params.jobId ?? null,
+    vpsInstanceId: params.vpsInstanceId ?? null,
+  });
 }
 
-export function createProvisionInstanceWorker() {
-  const vpsProvider = getVpsProvider();
-  const connection = getRedisConnection();
+export function createProvisionInstanceWorker(): ProvisionInstanceWorkerRuntime {
+  const hostServerProvider = getHostServerProvider();
+  const workerConnection = createRedisConnection('worker');
+  const connectionPool = new Set<IORedis>([workerConnection]);
 
   const worker = new Worker<ProvisionInstanceJobPayload>(
     'provision-instance',
     async (job) => {
       const { subscriptionId, vpsInstanceId, jobId } = job.data;
-      let appPassword: string | null = null;
+
+      console.log('[worker][job] received', {
+        bullmqJobId: job.id,
+        subscriptionId: subscriptionId ?? null,
+        vpsInstanceId: vpsInstanceId ?? null,
+        jobId: jobId ?? null,
+      });
+
+      if (!subscriptionId || !vpsInstanceId || !jobId) {
+        throw new Error('Provision job payload is missing required identifiers');
+      }
 
       try {
         await db
           .update(provisioningJobs)
           .set({ status: 'running', startedAt: new Date() })
           .where(eq(provisioningJobs.id, jobId));
+
+        const preflightError = getProvisioningPreflightError();
+        if (preflightError) {
+          await db
+            .update(provisioningJobs)
+            .set({ currentStep: 'blocked_configuration' })
+            .where(eq(provisioningJobs.id, jobId));
+
+          await appendJobLog(jobId, `BLOCKED: ${preflightError}`);
+          throw new Error(preflightError);
+        }
 
         await updateStep({
           vpsInstanceId,
@@ -178,21 +217,21 @@ export function createProvisionInstanceWorker() {
             .where(eq(onboardingSessions.orderId, order.id))
             .limit(1);
 
-          const sshPublicKeys = [getProvisioningPublicKey()];
-          if (onboardingSession?.sshPublicKey) {
-            sshPublicKeys.push(onboardingSession.sshPublicKey);
-          }
+          const provisioningPublicKey = getProvisioningPublicKey();
+          const sshPublicKeys = [provisioningPublicKey, onboardingSession?.sshPublicKey].filter(
+            (value): value is string => Boolean(value),
+          );
 
-          const created = await vpsProvider.createServer({
+          const created = await hostServerProvider.provisionHostServer({
             name: `psi-${subscriptionId}`,
-            spec: product.vpsSpec as { ram_gb: number; cpu: number; disk_gb: number; os_image: string },
+            instanceType: `${product.slug}-placeholder`,
             region: vpsInstance.region,
             sshPublicKeys,
             cloudInitScript: '# mock cloud-init placeholder',
           });
 
           providerId = created.providerId;
-          ip = created.ip;
+          ip = created.ipAddress;
 
           await db
             .update(vpsInstances)
@@ -202,7 +241,7 @@ export function createProvisionInstanceWorker() {
             })
             .where(eq(vpsInstances.id, vpsInstanceId));
         } else {
-          await appendJobLog(jobId, 'Provider instance already exists, skipping createServer');
+          await appendJobLog(jobId, 'Provider host already exists, skipping provisionHostServer');
         }
 
         await updateStep({
@@ -215,7 +254,7 @@ export function createProvisionInstanceWorker() {
 
         let status: 'starting' | 'running' | 'error' = 'starting';
         for (let attempt = 1; attempt <= 40; attempt += 1) {
-          status = await vpsProvider.getServerStatus(providerId!);
+          status = await hostServerProvider.getHostServerStatus(providerId!);
           if (status === 'running') {
             await db
               .update(vpsInstances)
@@ -244,7 +283,6 @@ export function createProvisionInstanceWorker() {
 
         await sleep(5000);
         await appendJobLog(jobId, 'PSI install complete (mock)');
-        appPassword = generateAppPassword();
 
         await db
           .update(vpsInstances)
@@ -269,28 +307,34 @@ export function createProvisionInstanceWorker() {
           .where(eq(subscriptions.id, subscriptionId))
           .limit(1);
 
-        if (!subscription || !ip || !appPassword) {
+        if (!subscription || !ip) {
           throw new Error('Missing delivery context');
         }
 
-        await notificationService.sendDeliveryEmail({
+        await notificationService.sendAgentReadyEmail({
           userId: subscription.userId,
-          ip,
-          appPassword,
+          productName: 'PSI Agent',
+          agentUrl: `http://${ip}:8080`,
         });
-
-        appPassword = null;
       } catch (error) {
         const message = error instanceof Error ? error.message : 'Unknown provisioning error';
         await markFailed({ vpsInstanceId, jobId, errorMessage: message });
         throw error;
       } finally {
-        appPassword = null;
       }
     },
     {
-      connection,
+      connection: workerConnection,
       concurrency: 1,
+      createClient(type, redisOpts) {
+        const client = new (workerConnection.constructor as typeof IORedis)({
+          ...redisOpts,
+          maxRetriesPerRequest: null,
+        });
+
+        connectionPool.add(client);
+        return client;
+      },
     },
   );
 
@@ -298,5 +342,12 @@ export function createProvisionInstanceWorker() {
     console.error('[worker][bullmq] worker error', error.message);
   });
 
-  return worker;
+  return {
+    worker,
+    async close() {
+      await worker.close();
+      await Promise.all([...connectionPool].map((connection) => closeRedisConnection(connection)));
+      connectionPool.clear();
+    },
+  };
 }

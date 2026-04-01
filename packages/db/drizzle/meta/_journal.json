@@ -8,6 +8,27 @@
       "when": 1774710000000,
       "tag": "0000_initial",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1774780000000,
+      "tag": "0001_referral-voided-and-fraud-reason",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1774780200000,
+      "tag": "0002_referral-ledger-referral-id-nullable",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1774970000000,
+      "tag": "0003_shared-host-runtime-foundations",
+      "breakpoints": true
     }
   ]
 }

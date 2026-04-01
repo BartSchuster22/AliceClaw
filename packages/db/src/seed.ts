@@ -114,11 +114,13 @@ async function main() {
       },
     });
 
+  const userPasswordHash = await hashPassword('user_dev_password');
+
   await db
     .insert(users)
     .values({
       email: 'user@openclaw.local',
-      passwordHash: await hashPassword('user_dev_password'),
+      passwordHash: userPasswordHash,
       fullName: 'Test User',
       referralCode: 'TEST1234',
       emailVerified: true,
@@ -127,7 +129,7 @@ async function main() {
     .onConflictDoUpdate({
       target: users.email,
       set: {
-        passwordHash: await hashPassword('user_dev_password'),
+        passwordHash: userPasswordHash,
         fullName: 'Test User',
         referralCode: 'TEST1234',
         emailVerified: true,

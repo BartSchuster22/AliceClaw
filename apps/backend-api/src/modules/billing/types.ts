@@ -5,6 +5,7 @@ export type BillingEvent =
       billingProviderSubscriptionId: string;
       userId: string;
       productId: string;
+      orderId?: string;
     }
   | {
       type: 'subscription.renewed';

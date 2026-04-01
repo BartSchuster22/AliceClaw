@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { NavLink, Navigate, Route, Routes, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { QRCodeSVG } from 'qrcode.react';
@@ -13,7 +13,16 @@ import {
   logout,
   updateUserProfile,
 } from './lib/dashboard-api';
-import { completeOnboarding, getOnboardingSession, saveOnboardingStep } from './lib/api';
+import {
+  completeOnboarding,
+  createOrder,
+  getDeployStatus,
+  getOnboardingSession,
+  getProducts,
+  loginUser,
+  registerUser,
+  saveOnboardingStep,
+} from './lib/api';
 
 const TOTAL_STEPS = 7;
 
@@ -28,7 +37,6 @@ type WizardState = {
   tax_id: string;
   intended_use_case: string;
   preferred_region: string;
-  ssh_public_key: string;
   accepted_terms: boolean;
   accepted_provisioning_notice: boolean;
 };
@@ -42,7 +50,6 @@ const DEFAULT_STATE: WizardState = {
   tax_id: '',
   intended_use_case: '',
   preferred_region: 'EU',
-  ssh_public_key: '',
   accepted_terms: false,
   accepted_provisioning_notice: false,
 };
@@ -131,13 +138,73 @@ function DashboardLayout({ children }: { children: React.ReactNode }) {
 }
 
 function LoginPage() {
+  const { accessToken, setAccessToken } = useAuth();
+  const navigate = useNavigate();
+  const [form, setForm] = useState({ email: '', password: '' });
+  const [error, setError] = useState<string | null>(null);
+
+  const loginMutation = useMutation({
+    mutationFn: loginUser,
+    onSuccess: (data) => {
+      setAccessToken(data.accessToken);
+      setError(null);
+      navigate('/dashboard');
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : 'Login failed');
+    },
+  });
+
+  if (accessToken) {
+    return <Navigate to="/dashboard" replace />;
+  }
+
   return (
     <AppShell>
       <main className="mx-auto max-w-2xl px-4 py-20 sm:px-6 lg:px-8">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-8">
-          <h1 className="text-3xl font-semibold text-white">Login required</h1>
+          <h1 className="text-3xl font-semibold text-white">Sign in</h1>
           <p className="mt-4 text-sm text-slate-300">
-            Your refresh session is missing or expired. Go back through checkout or sign in again from the main web app.
+            Sign in to continue to your dashboard, onboarding, and referral area.
+          </p>
+
+          <form
+            className="mt-8 space-y-4"
+            onSubmit={async (event) => {
+              event.preventDefault();
+              setError(null);
+              await loginMutation.mutateAsync(form);
+            }}
+          >
+            <input
+              type="email"
+              required
+              placeholder="Email"
+              value={form.email}
+              onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100"
+            />
+            <input
+              type="password"
+              required
+              placeholder="Password"
+              value={form.password}
+              onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+              className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-slate-100"
+            />
+            <button
+              type="submit"
+              disabled={loginMutation.isPending}
+              className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 disabled:opacity-60"
+            >
+              {loginMutation.isPending ? 'Signing in…' : 'Sign in'}
+            </button>
+          </form>
+
+          {error ? <p className="mt-4 text-sm text-rose-400">{error}</p> : null}
+
+          <p className="mt-6 text-sm text-slate-400">
+            Need a new instance first? Go to checkout from the marketing site.
           </p>
         </div>
       </main>
@@ -159,22 +226,30 @@ function OverviewPage() {
   });
 
   const subscriptions = subscriptionsQuery.data ?? [];
-  const activeInstancesCount = subscriptions.filter((item) => item.vpsStatus === 'completed').length;
+  const activeInstancesCount = subscriptions.filter((item) => item.containerStatus === 'running').length;
+  const pausedInstancesCount = subscriptions.filter((item) => item.containerStatus === 'stopped').length;
+  const settingUpCount = subscriptions.filter((item) =>
+    ['pending_verification', 'queued', 'allocating', 'deploying', 'starting'].includes(item.containerStatus ?? ''),
+  ).length;
   const latestRenewal = subscriptions.map((item) => item.currentPeriodEnd).sort().at(0) ?? null;
 
   return (
     <DashboardLayout>
-      <div className="grid gap-6 md:grid-cols-3">
+      <div className="grid gap-6 md:grid-cols-4">
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-          <p className="text-sm text-slate-400">Active instances</p>
+          <p className="text-sm text-slate-400">Active agents</p>
           <p className="mt-3 text-3xl font-semibold text-white">{activeInstancesCount}</p>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-          <p className="text-sm text-slate-400">Referral credits earned</p>
-          <p className="mt-3 text-3xl font-semibold text-white">{formatMoney(referralsQuery.data?.totalCreditCents ?? 0)}</p>
+          <p className="text-sm text-slate-400">Paused agents</p>
+          <p className="mt-3 text-3xl font-semibold text-white">{pausedInstancesCount}</p>
         </div>
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
-          <p className="text-sm text-slate-400">Subscription renewal date</p>
+          <p className="text-sm text-slate-400">Setting up</p>
+          <p className="mt-3 text-3xl font-semibold text-white">{settingUpCount}</p>
+        </div>
+        <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+          <p className="text-sm text-slate-400">Next renewal date</p>
           <p className="mt-3 text-3xl font-semibold text-white">{formatDate(latestRenewal)}</p>
         </div>
       </div>
@@ -252,7 +327,7 @@ function ReferralsPage() {
           <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
             <h2 className="text-xl font-semibold text-white">Reward rules</h2>
             <p className="mt-4 text-sm leading-6 text-slate-300">
-              Referral rewards are paid as subscription credit only. Credits are applied after the platform cooling period and can be voided if fraud is detected.
+              Referral rewards are paid as subscription credit only. Credits move through a cooling period before they are applied, and can be voided if fraud is detected.
             </p>
           </div>
 
@@ -308,7 +383,7 @@ function ReferralsPage() {
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
           <h2 className="text-xl font-semibold text-white">QR code</h2>
           <div className="mt-6 inline-flex rounded-2xl bg-white p-4">
-            <QRCodeSVG value={referrals?.referralLink ?? 'https://web.canariaslibre.com'} size={180} />
+            <QRCodeSVG value={referrals?.referralLink ?? 'https://aquiero.com'} size={180} />
           </div>
         </div>
       </div>
@@ -386,16 +461,24 @@ function SupportPage() {
 function OnboardingPage() {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
-  const orderId = searchParams.get('orderId') ?? '';
+  const subscriptionId = searchParams.get('subscriptionId') ?? '';
+  const deploying = searchParams.get('deploying') === 'true';
   const { accessToken } = useAuth();
   const [step, setStep] = useState(1);
   const [state, setState] = useState<WizardState>(DEFAULT_STATE);
   const [error, setError] = useState<string | null>(null);
 
   const sessionQuery = useQuery({
-    queryKey: ['onboarding-session', orderId],
-    queryFn: () => getOnboardingSession(orderId, accessToken!),
-    enabled: Boolean(orderId && accessToken),
+    queryKey: ['onboarding-session', subscriptionId],
+    queryFn: () => getOnboardingSession(subscriptionId, accessToken!),
+    enabled: Boolean(subscriptionId && accessToken),
+  });
+
+  const deployStatusQuery = useQuery({
+    queryKey: ['deploy-status', subscriptionId],
+    queryFn: () => getDeployStatus(subscriptionId, accessToken!),
+    enabled: Boolean(subscriptionId && accessToken && deploying),
+    refetchInterval: 5000,
   });
 
   useEffect(() => {
@@ -413,14 +496,13 @@ function OnboardingPage() {
       tax_id: String(answers.tax_id ?? current.tax_id),
       intended_use_case: String(answers.intended_use_case ?? current.intended_use_case),
       preferred_region: String(answers.preferred_region ?? current.preferred_region),
-      ssh_public_key: String(answers.ssh_public_key ?? current.ssh_public_key),
       accepted_terms: Boolean(answers.accepted_terms ?? current.accepted_terms),
       accepted_provisioning_notice: Boolean(answers.accepted_provisioning_notice ?? current.accepted_provisioning_notice),
     }));
   }, [sessionQuery.data]);
 
   const saveMutation = useMutation({
-    mutationFn: (payload: { orderId: string; step: number; answers: Record<string, unknown> }) =>
+    mutationFn: (payload: { subscriptionId: string; step: number; answers: Record<string, unknown> }) =>
       saveOnboardingStep(payload, accessToken!),
     onSuccess: (data) => {
       setStep(Math.min(data.currentStep + 1, TOTAL_STEPS));
@@ -432,7 +514,7 @@ function OnboardingPage() {
   });
 
   const completeMutation = useMutation({
-    mutationFn: () => completeOnboarding({ orderId }, accessToken!),
+    mutationFn: () => completeOnboarding({ subscriptionId }, accessToken!),
     onSuccess: () => {
       navigate('/dashboard/instances?new=true');
     },
@@ -447,15 +529,77 @@ function OnboardingPage() {
 
   const saveStep = async (stepNumber: number, answers: Record<string, unknown>) => {
     setError(null);
-    await saveMutation.mutateAsync({ orderId, step: stepNumber, answers });
+    await saveMutation.mutateAsync({ subscriptionId, step: stepNumber, answers });
+  };
+
+  const deployStatus = deployStatusQuery.data;
+  const showDeployPhase = deploying;
+  const deployTitleMap: Record<string, string> = {
+    pending_verification: 'Confirm your email to begin setup',
+    queued: 'Preparing capacity for your agent...',
+    allocating: 'Finding the best host for your agent...',
+    deploying: 'Starting your agent...',
+    starting: 'Finishing setup...',
+    running: 'Your agent is ready!',
+    failed: 'Setup failed',
+  };
+  const deploySubtitleMap: Record<string, string> = {
+    pending_verification: 'Check your inbox and click the verification link to start deploying your agent.',
+    queued: 'Your setup is queued and will begin automatically as soon as a host is available.',
+    allocating: 'We are assigning your agent to the best available host.',
+    deploying: 'Your container is being created now.',
+    starting: 'Your agent is starting up and passing health checks.',
+    running: 'Open your agent or continue with optional preferences.',
+    failed: 'We were unable to finish setup. Please contact support if this persists.',
   };
 
   return (
     <AppShell>
       <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
+        {showDeployPhase ? (
+          <div className="mb-8 rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
+            <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-400">Deployment</p>
+            <h1 className="mt-3 text-3xl font-bold tracking-tight text-white">
+              {deployTitleMap[deployStatus?.containerStatus ?? 'pending_verification'] ?? 'Setting up your agent...'}
+            </h1>
+            <p className="mt-4 text-sm text-slate-300">
+              {deploySubtitleMap[deployStatus?.containerStatus ?? 'pending_verification'] ?? 'Preparing your setup...'}
+            </p>
+            {deployStatus?.currentStep ? (
+              <p className="mt-4 text-xs uppercase tracking-[0.2em] text-slate-500">{deployStatus.currentStep}</p>
+            ) : null}
+            {deployStatus?.recentLogs?.length ? (
+              <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-4 text-xs text-slate-400">
+                {deployStatus.recentLogs.map((line) => (
+                  <div key={line}>{line}</div>
+                ))}
+              </div>
+            ) : null}
+            {deployStatus?.containerStatus === 'running' && deployStatus.agentUrl ? (
+              <div className="mt-6 flex gap-3">
+                <a
+                  href={deployStatus.agentUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950"
+                >
+                  Open your agent
+                </a>
+                <button
+                  type="button"
+                  onClick={() => navigator.clipboard.writeText(deployStatus.agentUrl ?? '')}
+                  className="rounded-lg border border-slate-700 px-4 py-3 text-sm text-slate-200"
+                >
+                  Copy agent URL
+                </button>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="mb-8">
           <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-400">Onboarding</p>
-          <h1 className="mt-3 text-4xl font-bold tracking-tight text-white">Set up your OpenClaw instance</h1>
+          <h1 className="mt-3 text-4xl font-bold tracking-tight text-white">Set up your PSI agent</h1>
           <p className="mt-4 text-sm text-slate-300">Step {step} of {TOTAL_STEPS}</p>
           <div className="mt-4 h-2 rounded-full bg-slate-800">
             <div className="h-2 rounded-full bg-emerald-500 transition-all" style={{ width: `${Math.round((step / TOTAL_STEPS) * 100)}%` }} />
@@ -463,14 +607,226 @@ function OnboardingPage() {
         </div>
 
         <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6 sm:p-8">
-          {step === 1 ? <div className="space-y-6"><h2 className="text-2xl font-semibold text-white">Welcome</h2><button type="button" onClick={() => setStep(2)} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Start setup</button></div> : null}
-          {step === 2 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">Your profile</h2><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Full name" value={state.full_name} onChange={(e) => setState((s) => ({ ...s, full_name: e.target.value }))} /><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Phone (optional)" value={state.phone} onChange={(e) => setState((s) => ({ ...s, phone: e.target.value }))} /><select className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" value={state.country} onChange={(e) => setState((s) => ({ ...s, country: e.target.value }))}><option value="">Select country</option><option value="ES">Spain</option><option value="DE">Germany</option><option value="US">United States</option><option value="SG">Singapore</option></select><button type="button" onClick={() => saveStep(2, { full_name: state.full_name, phone: state.phone, country: state.country })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button></div> : null}
-          {step === 3 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">Account type</h2><div className="flex gap-2 rounded-lg bg-slate-800 p-1">{(['private','business'] as const).map((value)=><button key={value} type="button" onClick={() => setState((s) => ({ ...s, account_type: value }))} className={`flex-1 rounded-md px-4 py-3 text-sm ${state.account_type === value ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>{value === 'private' ? 'Personal' : 'Business'}</button>)}</div>{state.account_type === 'business' ? <><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Company name" value={state.company_name} onChange={(e) => setState((s) => ({ ...s, company_name: e.target.value }))} /><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Tax ID (optional)" value={state.tax_id} onChange={(e) => setState((s) => ({ ...s, tax_id: e.target.value }))} /></> : null}<button type="button" onClick={() => saveStep(3, { account_type: state.account_type, company_name: state.company_name, tax_id: state.tax_id })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button></div> : null}
-          {step === 4 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">How will you use OpenClaw?</h2><textarea maxLength={200} className="min-h-32 w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Examples: personal AI assistant, research agent, internal automation helper" value={state.intended_use_case} onChange={(e) => setState((s) => ({ ...s, intended_use_case: e.target.value }))} /><button type="button" onClick={() => saveStep(4, { intended_use_case: state.intended_use_case })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button></div> : null}
-          {step === 5 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">Infrastructure preferences</h2><select className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" value={state.preferred_region} onChange={(e) => setState((s) => ({ ...s, preferred_region: e.target.value }))}><option value="EU">EU (Frankfurt)</option><option value="US">US (Ashburn)</option><option value="APAC">APAC (Singapore)</option></select><button type="button" onClick={() => saveStep(5, { preferred_region: state.preferred_region })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button></div> : null}
-          {step === 6 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">SSH access</h2><p className="text-sm text-slate-300">Paste your public key (starts with ssh-rsa or ssh-ed25519) to enable direct SSH access.</p><textarea className="min-h-32 w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" value={state.ssh_public_key} onChange={(e) => setState((s) => ({ ...s, ssh_public_key: e.target.value }))} /><button type="button" onClick={() => saveStep(6, { ssh_public_key: state.ssh_public_key })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button></div> : null}
-          {step === 7 ? <div className="space-y-5"><h2 className="text-2xl font-semibold text-white">Terms and confirmation</h2><label className="flex items-start gap-3 text-sm text-slate-300"><input type="checkbox" checked={state.accepted_terms} onChange={(e) => setState((s) => ({ ...s, accepted_terms: e.target.checked }))} className="mt-1" /><span>I accept the Terms of Service and Privacy Policy.</span></label><label className="flex items-start gap-3 text-sm text-slate-300"><input type="checkbox" checked={state.accepted_provisioning_notice} onChange={(e) => setState((s) => ({ ...s, accepted_provisioning_notice: e.target.checked }))} className="mt-1" /><span>I understand provisioning takes 5–10 minutes.</span></label><button type="button" onClick={() => completeMutation.mutate()} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Launch my instance</button></div> : null}
+          {step === 1 ? <div className="space-y-6"><h2 className="text-2xl font-semibold text-white">Welcome</h2><button type="button" onClick={() => setStep(2)} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Start preferences</button></div> : null}
+          {step === 2 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">Your profile</h2><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Full name" value={state.full_name} onChange={(e) => setState((s) => ({ ...s, full_name: e.target.value }))} /><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Phone (optional)" value={state.phone} onChange={(e) => setState((s) => ({ ...s, phone: e.target.value }))} /><select className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" value={state.country} onChange={(e) => setState((s) => ({ ...s, country: e.target.value }))}><option value="">Select country</option><option value="ES">Spain</option><option value="DE">Germany</option><option value="US">United States</option><option value="SG">Singapore</option></select><div className="flex gap-3"><button type="button" onClick={() => saveStep(2, { full_name: state.full_name, phone: state.phone, country: state.country })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button><button type="button" onClick={() => setStep(3)} className="rounded-lg border border-slate-700 px-4 py-3 text-sm text-slate-200">Skip for now</button></div></div> : null}
+          {step === 3 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">Account type</h2><div className="flex gap-2 rounded-lg bg-slate-800 p-1">{(['private','business'] as const).map((value)=><button key={value} type="button" onClick={() => setState((s) => ({ ...s, account_type: value }))} className={`flex-1 rounded-md px-4 py-3 text-sm ${state.account_type === value ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}>{value === 'private' ? 'Personal' : 'Business'}</button>)}</div>{state.account_type === 'business' ? <><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Company name" value={state.company_name} onChange={(e) => setState((s) => ({ ...s, company_name: e.target.value }))} /><input className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Tax ID (optional)" value={state.tax_id} onChange={(e) => setState((s) => ({ ...s, tax_id: e.target.value }))} /></> : null}<div className="flex gap-3"><button type="button" onClick={() => saveStep(3, { account_type: state.account_type, company_name: state.company_name, tax_id: state.tax_id })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button><button type="button" onClick={() => setStep(4)} className="rounded-lg border border-slate-700 px-4 py-3 text-sm text-slate-200">Skip for now</button></div></div> : null}
+          {step === 4 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">Use case</h2><textarea maxLength={200} className="min-h-32 w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" placeholder="Examples: personal AI assistant, research agent, internal automation helper" value={state.intended_use_case} onChange={(e) => setState((s) => ({ ...s, intended_use_case: e.target.value }))} /><div className="flex gap-3"><button type="button" onClick={() => saveStep(4, { intended_use_case: state.intended_use_case })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button><button type="button" onClick={() => setStep(5)} className="rounded-lg border border-slate-700 px-4 py-3 text-sm text-slate-200">Skip for now</button></div></div> : null}
+          {step === 5 ? <div className="space-y-4"><h2 className="text-2xl font-semibold text-white">Preferences</h2><select className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3" value={state.preferred_region} onChange={(e) => setState((s) => ({ ...s, preferred_region: e.target.value }))}><option value="EU">EU</option><option value="US">US</option><option value="APAC">APAC</option></select><div className="flex gap-3"><button type="button" onClick={() => saveStep(5, { preferred_region: state.preferred_region })} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Next</button><button type="button" onClick={() => completeMutation.mutate()} className="rounded-lg border border-slate-700 px-4 py-3 text-sm text-slate-200">Skip all and finish</button></div></div> : null}
+          {step > 5 ? <div className="space-y-5"><h2 className="text-2xl font-semibold text-white">Setup complete</h2><p className="text-sm text-slate-300">Your agent is already running. You can always adjust preferences later.</p><button type="button" onClick={() => completeMutation.mutate()} className="inline-flex items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950">Finish</button></div> : null}
           {error ? <p className="mt-6 text-sm text-rose-400">{error}</p> : null}
+        </div>
+      </main>
+    </AppShell>
+  );
+}
+
+function CheckoutPage() {
+  const [searchParams] = useSearchParams();
+  const productId = searchParams.get('product_id') ?? '';
+  const referralCode = searchParams.get('ref') ?? undefined;
+  const [mode, setMode] = useState<'signin' | 'create'>('create');
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [form, setForm] = useState({ email: '', password: '', fullName: '' });
+  const [error, setError] = useState<string | null>(null);
+
+  const productsQuery = useQuery({ queryKey: ['products'], queryFn: getProducts });
+  const product = useMemo(
+    () => (productsQuery.data ?? []).find((item) => item.id === productId),
+    [productsQuery.data, productId],
+  );
+
+  const registerMutation = useMutation({
+    mutationFn: registerUser,
+    onSuccess: (data) => {
+      sessionStorage.setItem('access_token', data.accessToken);
+      setAccessToken(data.accessToken);
+      setError(null);
+      setStep(2);
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : 'Registration failed');
+    },
+  });
+
+  const loginMutation = useMutation({
+    mutationFn: loginUser,
+    onSuccess: (data) => {
+      sessionStorage.setItem('access_token', data.accessToken);
+      setAccessToken(data.accessToken);
+      setError(null);
+      setStep(2);
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : 'Login failed');
+    },
+  });
+
+  const orderMutation = useMutation({
+    mutationFn: async () => {
+      if (!accessToken || !productId) {
+        throw new Error('Missing product or auth state');
+      }
+
+      return createOrder({ productId, referralCodeUsed: referralCode }, accessToken);
+    },
+    onSuccess: (data) => {
+      setStep(3);
+      window.location.href = data.checkoutUrl;
+    },
+    onError: (mutationError) => {
+      setError(mutationError instanceof Error ? mutationError.message : 'Checkout failed');
+    },
+  });
+
+  const submitAccountStep = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setError(null);
+
+    if (mode === 'create') {
+      await registerMutation.mutateAsync({
+        email: form.email,
+        password: form.password,
+        full_name: form.fullName,
+        referral_code_used: referralCode,
+      });
+      return;
+    }
+
+    await loginMutation.mutateAsync({
+      email: form.email,
+      password: form.password,
+    });
+  };
+
+  return (
+    <AppShell>
+      <main className="mx-auto max-w-4xl px-4 py-16 sm:px-6 lg:px-8">
+        <div className="mb-10">
+          <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-400">Checkout</p>
+          <h1 className="mt-4 text-4xl font-bold tracking-tight text-white">Get your PSI live</h1>
+        </div>
+
+        <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            {step === 1 ? (
+              <form className="space-y-4" onSubmit={submitAccountStep}>
+                <div className="flex gap-2 rounded-lg bg-slate-800 p-1 text-sm">
+                  <button
+                    type="button"
+                    onClick={() => setMode('create')}
+                    className={`flex-1 rounded-md px-3 py-2 ${mode === 'create' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}
+                  >
+                    Create account
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMode('signin')}
+                    className={`flex-1 rounded-md px-3 py-2 ${mode === 'signin' ? 'bg-emerald-500 text-slate-950' : 'text-slate-300'}`}
+                  >
+                    Sign in
+                  </button>
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300">Email</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm text-slate-300">Password</label>
+                  <input
+                    type="password"
+                    value={form.password}
+                    onChange={(event) => setForm((current) => ({ ...current, password: event.target.value }))}
+                    className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                    minLength={8}
+                    required
+                  />
+                </div>
+
+                {mode === 'create' ? (
+                  <div>
+                    <label className="mb-2 block text-sm text-slate-300">Full name</label>
+                    <input
+                      type="text"
+                      value={form.fullName}
+                      onChange={(event) => setForm((current) => ({ ...current, fullName: event.target.value }))}
+                      className="w-full rounded-lg border border-slate-700 bg-slate-950 px-4 py-3 text-sm text-white outline-none focus:border-emerald-400"
+                      required
+                    />
+                  </div>
+                ) : null}
+
+                {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+
+                <button
+                  type="submit"
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+                >
+                  Continue
+                </button>
+              </form>
+            ) : (
+              <div className="space-y-6">
+                <div>
+                  <p className="text-sm text-emerald-400">Step 2</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">Order summary</h2>
+                </div>
+
+                {product ? (
+                  <div className="rounded-xl border border-slate-800 bg-slate-950 p-5">
+                    <h3 className="text-xl font-semibold text-white">{product.name}</h3>
+                    <p className="mt-2 text-sm text-slate-300">{product.description}</p>
+                    <p className="mt-4 text-2xl font-bold text-emerald-400">{formatMoney(product.price_cents)}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm text-slate-400">Loading product…</p>
+                )}
+
+                {referralCode ? (
+                  <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                    Referral code applied.
+                  </div>
+                ) : null}
+
+                {error ? <p className="text-sm text-rose-400">{error}</p> : null}
+
+                <button
+                  type="button"
+                  onClick={() => orderMutation.mutate()}
+                  className="inline-flex w-full items-center justify-center rounded-lg bg-emerald-500 px-4 py-3 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400"
+                >
+                  Confirm and pay
+                </button>
+              </div>
+            )}
+          </div>
+
+          <aside className="rounded-2xl border border-slate-800 bg-slate-900 p-6">
+            <h2 className="text-lg font-semibold text-white">Progress</h2>
+            <ol className="mt-4 space-y-4 text-sm text-slate-300">
+              {['Account', 'Order summary', 'Payment'].map((label, index) => {
+                const currentStep = index + 1;
+                return (
+                  <li key={label} className="flex items-center gap-3">
+                    <span
+                      className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-semibold ${step >= currentStep ? 'bg-emerald-500 text-slate-950' : 'bg-slate-800 text-slate-400'}`}
+                    >
+                      {currentStep}
+                    </span>
+                    <span>{label}</span>
+                  </li>
+                );
+              })}
+            </ol>
+          </aside>
         </div>
       </main>
     </AppShell>
@@ -485,13 +841,14 @@ function AppRoutes() {
     return <AppShell><main className="px-6 py-20 text-slate-300">Loading…</main></AppShell>;
   }
 
-  if (!accessToken && location.pathname !== '/login') {
+  if (!accessToken && location.pathname !== '/login' && location.pathname !== '/checkout') {
     return <Navigate to="/login" replace />;
   }
 
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/checkout" element={<CheckoutPage />} />
       <Route path="/onboarding" element={<OnboardingPage />} />
       <Route path="/dashboard" element={<OverviewPage />} />
       <Route path="/dashboard/instances" element={<InstancesPage />} />

@@ -55,7 +55,7 @@ export async function registerOrderRoutes(app: FastifyInstance) {
         })
       : {
           sessionId: mockSessionId,
-          url: `${process.env.FRONTEND_APP_URL ?? 'https://app.canariaslibre.com'}/onboarding?orderId=${order.id}`,
+          url: `${process.env.FRONTEND_APP_URL ?? 'https://app.aquiero.com'}/onboarding?orderId=${order.id}`,
         };
 
     await db
