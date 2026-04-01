@@ -20,7 +20,7 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
   - bootstrapped active product definitions, server template, and ready dev host data
   - cleaned stale queued VPS-era provisioning jobs
   - fixed deploy worker bugs, added user delete route, cleaned stopped/deleted payload semantics, and verified lifecycle coverage (deploy -> visibility -> stop -> start -> health-check -> delete)
-- Provisioning reliability/admin work completed in this pass:
+- Provisioning reliability/admin work now completed and checkpointed:
   - upgraded mock host provider with scenario-driven testing via `.openclaw/mock-host-provider.json` (`success`, `fail_provision`, `error_on_status`, `stuck_starting`, `fail_delete`) plus delay/readiness knobs
   - fixed same-run mid-provision failure cleanup so created host rows become `failed` and provider cleanup is attempted best-effort
   - implemented `host_provision_attempts` with heartbeat, cleanup status, worker-run ownership, and startup reconciliation (migrations `0004_host-provision-attempts` and `0005_host-provision-attempt-worker-run-id`)
@@ -28,12 +28,13 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
   - cleaned legacy orphaned pre-attempt provisioning rows once and fenced them off from future recovery logic
   - fixed worker dev flow so the worker container no longer reruns install-on-start after a proper `docker compose up -d --force-recreate worker`
   - improved admin server-fleet observability: `/admin/servers`, `/admin/servers/:id`, and `/admin/scale-events` now expose provisioning-attempt context; frontend admin Server Fleet page now shows latest attempt status, cleanup result, failure reason, and worker run detail
+  - added admin retry for failed provisioning: `POST /admin/scale-events/:id/retry` creates a fresh retry scale-event, preserves old failed history, and was verified to produce a new ready host from a previously failed event
 - Remaining caveat: legacy pre-attempt historical rows remain old test artifacts; going forward `host_provision_attempts` is the authoritative recovery model.
 
 ## Next exact step
 
-- Reliability/admin pass is checkpointed here.
-- Next likely operational improvement: add admin lifecycle recovery actions (for example retry failed provisioning / reprovision from failed scale-event context) now that failure visibility is in place.
+- Reliability/admin recovery pass is checkpointed here.
+- Next likely operational improvement: add decommission/retire actions for failed or drained hosts, or broader cleanup/archive actions for stale failed operational noise.
 - After that, continue broader polish/integration work or intentionally resume real provider / real email / real Stripe follow-ups.
 
 ## Rules for this file

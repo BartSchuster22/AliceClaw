@@ -193,6 +193,20 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
     await loadFleet();
   }
 
+  async function retryScaleEvent(scaleEventId: string) {
+    setError(null);
+    const response = await authorizedFetch(`/admin/scale-events/${scaleEventId}/retry`, {
+      method: 'POST',
+    });
+
+    if (!response.ok) {
+      setError(await response.text());
+      return;
+    }
+
+    await loadFleet();
+  }
+
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
@@ -344,6 +358,7 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                 <th className="pb-3">Status</th>
                 <th className="pb-3">Created</th>
                 <th className="pb-3">Error</th>
+                <th className="pb-3">Action</th>
               </tr>
             </thead>
             <tbody>
@@ -361,6 +376,15 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                         {event.latestProvisionAttempt.failureReason ? <div>Attempt error: {event.latestProvisionAttempt.failureReason}</div> : null}
                       </div>
                     ) : null}
+                  </td>
+                  <td className="py-3">
+                    {adminRole === 'super_admin' && event.status === 'failed' ? (
+                      <button type="button" onClick={() => void retryScaleEvent(event.id)} className="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-300">
+                        Retry
+                      </button>
+                    ) : (
+                      <span className="text-slate-600">—</span>
+                    )}
                   </td>
                 </tr>
               ))}

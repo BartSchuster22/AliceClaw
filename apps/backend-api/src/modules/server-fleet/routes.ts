@@ -154,6 +154,58 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
   );
 
   app.post(
+    '/admin/scale-events/:id/retry',
+    { preHandler: [requireAdmin, requireAdminRole(['super_admin'])] },
+    async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      if (!params.success) {
+        return reply.status(400).send({ error: 'Invalid scale event id' });
+      }
+
+      const [scaleEvent] = await db
+        .select()
+        .from(serverScaleEvents)
+        .where(eq(serverScaleEvents.id, params.data.id))
+        .limit(1);
+
+      if (!scaleEvent) {
+        return reply.status(404).send({ error: 'Scale event not found' });
+      }
+
+      if (scaleEvent.status !== 'failed') {
+        return reply.status(409).send({ error: 'Only failed scale events can be retried' });
+      }
+
+      const [activeTemplate] = await db
+        .select()
+        .from(serverTemplates)
+        .where(eq(serverTemplates.isActive, true))
+        .limit(1);
+
+      if (!activeTemplate) {
+        return reply.status(409).send({ error: 'No active server template configured' });
+      }
+
+      const [retryScaleEvent] = await db
+        .insert(serverScaleEvents)
+        .values({
+          triggerHostServerId: scaleEvent.triggerHostServerId,
+          triggerReason: `${scaleEvent.triggerReason}:retry`,
+          status: 'triggered',
+        })
+        .returning();
+
+      await enqueueProvisionHostServerJob({ scaleEventId: retryScaleEvent.id });
+
+      return {
+        success: true,
+        originalScaleEventId: scaleEvent.id,
+        retryScaleEventId: retryScaleEvent.id,
+      };
+    },
+  );
+
+  app.post(
     '/admin/servers/:id/drain',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin'])] },
     async (request, reply) => {
