@@ -95,6 +95,45 @@ function getStatusStyle(status: string) {
   }
 }
 
+function isActiveHostStatus(status: string) {
+  return ['ready', 'provisioning', 'draining'].includes(status);
+}
+
+function isAttentionHostStatus(status: string) {
+  return ['failed', 'unreachable'].includes(status);
+}
+
+function getAttemptStatusStyle(status: string) {
+  switch (status) {
+    case 'completed':
+      return 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30';
+    case 'running':
+      return 'bg-sky-500/10 text-sky-300 border border-sky-500/30';
+    case 'failed':
+      return 'bg-rose-500/10 text-rose-300 border border-rose-500/30';
+    default:
+      return 'bg-slate-700 text-slate-200 border border-slate-600';
+  }
+}
+
+function getCleanupStatusStyle(status: string) {
+  switch (status) {
+    case 'completed':
+      return 'bg-emerald-500/10 text-emerald-300 border border-emerald-500/30';
+    case 'failed':
+      return 'bg-rose-500/10 text-rose-300 border border-rose-500/30';
+    case 'not_required':
+      return 'bg-slate-700/60 text-slate-300 border border-slate-600';
+    default:
+      return 'bg-slate-700 text-slate-200 border border-slate-600';
+  }
+}
+
+function formatTime(value?: string | null) {
+  if (!value) return '—';
+  return new Date(value).toLocaleString();
+}
+
 export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
   const authorizedFetch = useAuthorizedFetch();
   const [mode, setMode] = useState<'fleet' | 'templates' | 'scale-events'>('fleet');
@@ -105,12 +144,16 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
   const [detail, setDetail] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [templateForm, setTemplateForm] = useState(defaultTemplateForm);
+  const [showArchivedHosts, setShowArchivedHosts] = useState(false);
+  const [showArchivedScaleEvents, setShowArchivedScaleEvents] = useState(false);
+  const [fleetFilter, setFleetFilter] = useState<'all' | 'active' | 'attention'>('all');
+  const [scaleEventFilter, setScaleEventFilter] = useState<'all' | 'active' | 'failed'>('all');
 
   async function loadFleet() {
     const [hostsResponse, templatesResponse, scaleEventsResponse] = await Promise.all([
-      authorizedFetch('/admin/servers'),
+      authorizedFetch(`/admin/servers${showArchivedHosts ? '?includeArchived=true' : ''}`),
       authorizedFetch('/admin/server-templates'),
-      authorizedFetch('/admin/scale-events'),
+      authorizedFetch(`/admin/scale-events${showArchivedScaleEvents ? '?includeArchived=true' : ''}`),
     ]);
 
     setHosts((await hostsResponse.json()) as HostRow[]);
@@ -124,7 +167,7 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
       void loadFleet();
     }, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [showArchivedHosts, showArchivedScaleEvents]);
 
   async function openHostDetail(host: HostRow) {
     setSelectedHost(host);
@@ -253,6 +296,18 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
     await loadFleet();
   }
 
+  const activeHosts = hosts.filter((host) => isActiveHostStatus(host.status));
+  const attentionHosts = hosts.filter((host) => isAttentionHostStatus(host.status));
+  const failedScaleEvents = scaleEvents.filter((event) => event.status === 'failed');
+  const activeScaleEvents = scaleEvents.filter((event) => ['triggered', 'provisioning', 'ready'].includes(event.status));
+  const fleetHosts = fleetFilter === 'active' ? activeHosts : fleetFilter === 'attention' ? attentionHosts : hosts;
+  const visibleScaleEvents =
+    scaleEventFilter === 'active'
+      ? activeScaleEvents
+      : scaleEventFilter === 'failed'
+        ? failedScaleEvents
+        : scaleEvents;
+
   return (
     <section className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
@@ -269,42 +324,122 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
 
       {mode === 'fleet' ? (
         <>
+          <div className="grid gap-4 md:grid-cols-4">
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Active hosts</p>
+              <p className="mt-3 text-3xl font-semibold text-slate-100">{activeHosts.length}</p>
+            </div>
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-rose-300">Needs attention</p>
+              <p className="mt-3 text-3xl font-semibold text-rose-200">{attentionHosts.length}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Active scale events</p>
+              <p className="mt-3 text-3xl font-semibold text-slate-100">{activeScaleEvents.length}</p>
+            </div>
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-amber-300">Failed scale events</p>
+              <p className="mt-3 text-3xl font-semibold text-amber-200">{failedScaleEvents.length}</p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setFleetFilter('all')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'all' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>All hosts</button>
+              <button type="button" onClick={() => setFleetFilter('active')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'active' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Active only</button>
+              <button type="button" onClick={() => setFleetFilter('attention')} className={`rounded-xl px-4 py-2 text-sm ${fleetFilter === 'attention' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Needs attention</button>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-400">
+              <input type="checkbox" checked={showArchivedHosts} onChange={(event) => setShowArchivedHosts(event.target.checked)} />
+              Show archived hosts
+            </label>
+          </div>
+
           {adminRole === 'super_admin' ? (
             <div>
               <button type="button" onClick={() => void manualProvision()} className="rounded-xl bg-sky-500 px-4 py-3 text-sm font-medium text-slate-950">Provision new server</button>
             </div>
           ) : null}
-          <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-            {hosts.map((host) => (
-              <button
-                key={host.id}
-                type="button"
-                onClick={() => void openHostDetail(host)}
-                className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left"
-              >
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <h3 className="text-lg font-semibold text-slate-100">{host.name}</h3>
-                    <p className="text-sm text-slate-400">{host.region}</p>
-                  </div>
-                  <span className={`rounded-full px-3 py-1 text-xs ${getStatusStyle(host.status)}`}>{host.status}</span>
-                </div>
-                <p className="mt-4 text-xs text-slate-500">{host.ipAddress ?? '—'}</p>
-                <div className="mt-4 space-y-3 text-sm text-slate-300">
-                  <p>CPU: {formatCpu(host.usedCpu)} / {formatCpu(host.totalCpuMillicores - host.reservedCpuMillicores)}</p>
-                  <p>Memory: {formatMemory(host.usedMemory)} / {formatMemory(host.totalMemoryMb - host.reservedMemoryMb)}</p>
-                  <p>{host.containerCount} active containers</p>
-                  <p>Utilization: {Math.round(host.utilPercent)}%</p>
-                  {host.latestProvisionAttempt ? (
-                    <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-400">
-                      <p>Latest attempt: <span className="text-slate-200">{host.latestProvisionAttempt.status}</span></p>
-                      <p>Cleanup: <span className="text-slate-200">{host.latestProvisionAttempt.cleanupStatus}</span></p>
-                      <p>Failure: <span className="text-slate-200">{host.latestProvisionAttempt.failureReason ?? '—'}</span></p>
+
+          <div className="space-y-6">
+            <div>
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-slate-100">Active fleet</h3>
+                <p className="text-sm text-slate-500">Ready, provisioning, or draining hosts currently in the fleet.</p>
+              </div>
+              <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                {fleetHosts.filter((host) => isActiveHostStatus(host.status)).map((host) => (
+                  <button
+                    key={host.id}
+                    type="button"
+                    onClick={() => void openHostDetail(host)}
+                    className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6 text-left"
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <h3 className="text-lg font-semibold text-slate-100">{host.name}</h3>
+                        <p className="text-sm text-slate-400">{host.region}</p>
+                      </div>
+                      <span className={`rounded-full px-3 py-1 text-xs ${getStatusStyle(host.status)}`}>{host.status}</span>
                     </div>
-                  ) : null}
+                    <p className="mt-4 text-xs text-slate-500">{host.ipAddress ?? '—'}</p>
+                    <div className="mt-4 space-y-3 text-sm text-slate-300">
+                      <p>CPU: {formatCpu(host.usedCpu)} / {formatCpu(host.totalCpuMillicores - host.reservedCpuMillicores)}</p>
+                      <p>Memory: {formatMemory(host.usedMemory)} / {formatMemory(host.totalMemoryMb - host.reservedMemoryMb)}</p>
+                      <p>{host.containerCount} active containers</p>
+                      <p>Utilization: {Math.round(host.utilPercent)}%</p>
+                      {host.latestProvisionAttempt ? (
+                        <div className="rounded-xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-400">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className={`rounded-full px-2 py-1 ${getAttemptStatusStyle(host.latestProvisionAttempt.status)}`}>Attempt {host.latestProvisionAttempt.status}</span>
+                            <span className={`rounded-full px-2 py-1 ${getCleanupStatusStyle(host.latestProvisionAttempt.cleanupStatus)}`}>Cleanup {host.latestProvisionAttempt.cleanupStatus}</span>
+                          </div>
+                          <p className="mt-2">Last update: <span className="text-slate-200">{formatTime(host.latestProvisionAttempt.finishedAt ?? host.latestProvisionAttempt.createdAt ?? null)}</span></p>
+                          <p>Failure: <span className="text-slate-200">{host.latestProvisionAttempt.failureReason ?? '—'}</span></p>
+                        </div>
+                      ) : null}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {fleetHosts.some((host) => isAttentionHostStatus(host.status)) ? (
+              <div>
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-lg font-semibold text-rose-200">Needs attention</h3>
+                  <p className="text-sm text-slate-500">Failed or unreachable hosts that may need retry, retirement, or archive actions.</p>
                 </div>
-              </button>
-            ))}
+                <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
+                  {fleetHosts.filter((host) => isAttentionHostStatus(host.status)).map((host) => (
+                    <button
+                      key={host.id}
+                      type="button"
+                      onClick={() => void openHostDetail(host)}
+                      className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-6 text-left"
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h3 className="text-lg font-semibold text-slate-100">{host.name}</h3>
+                          <p className="text-sm text-slate-400">{host.region}</p>
+                        </div>
+                        <span className={`rounded-full px-3 py-1 text-xs ${getStatusStyle(host.status)}`}>{host.status}</span>
+                      </div>
+                      <div className="mt-4 space-y-2 text-sm text-slate-300">
+                        {host.latestProvisionAttempt ? (
+                          <div className="flex flex-wrap gap-2 text-xs">
+                            <span className={`rounded-full px-2 py-1 ${getAttemptStatusStyle(host.latestProvisionAttempt.status)}`}>Attempt {host.latestProvisionAttempt.status}</span>
+                            <span className={`rounded-full px-2 py-1 ${getCleanupStatusStyle(host.latestProvisionAttempt.cleanupStatus)}`}>Cleanup {host.latestProvisionAttempt.cleanupStatus}</span>
+                          </div>
+                        ) : null}
+                        <p>Failure: {host.latestProvisionAttempt?.failureReason ?? '—'}</p>
+                        <p>Last update: {formatTime(host.latestProvisionAttempt?.finishedAt ?? host.latestProvisionAttempt?.createdAt ?? null)}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
 
           {selectedHost && detail ? (
@@ -332,11 +467,15 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                     <h4 className="text-sm font-semibold text-slate-200">Provision attempts</h4>
                     {(detail.provisionAttempts ?? []).map((attempt: any) => (
                       <div key={attempt.id} className="rounded-xl border border-slate-800 bg-slate-950 p-4 text-xs text-slate-400">
-                        <p>Attempt: <span className="text-slate-200">{attempt.id}</span></p>
-                        <p>Status: <span className="text-slate-200">{attempt.status}</span></p>
-                        <p>Cleanup: <span className="text-slate-200">{attempt.cleanupStatus}</span></p>
-                        <p>Failure: <span className="text-slate-200">{attempt.failureReason ?? '—'}</span></p>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className={`rounded-full px-2 py-1 ${getAttemptStatusStyle(attempt.status)}`}>Attempt {attempt.status}</span>
+                          <span className={`rounded-full px-2 py-1 ${getCleanupStatusStyle(attempt.cleanupStatus)}`}>Cleanup {attempt.cleanupStatus}</span>
+                        </div>
+                        <p className="mt-2">Attempt: <span className="text-slate-200">{attempt.id}</span></p>
                         <p>Worker run: <span className="text-slate-200">{attempt.workerRunId ?? '—'}</span></p>
+                        <p>Started: <span className="text-slate-200">{formatTime(attempt.startedAt)}</span></p>
+                        <p>Finished: <span className="text-slate-200">{formatTime(attempt.finishedAt)}</span></p>
+                        <p>Failure: <span className="text-slate-200">{attempt.failureReason ?? '—'}</span></p>
                       </div>
                     ))}
                   </div>
@@ -404,51 +543,118 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
       ) : null}
 
       {mode === 'scale-events' ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
-          {adminRole === 'super_admin' ? (
-            <div className="mb-4 flex justify-end">
-              <button type="button" onClick={() => void archiveStaleFailedNoise()} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-300">Archive stale failed noise</button>
+        <div className="space-y-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-6">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap gap-2">
+              <button type="button" onClick={() => setScaleEventFilter('all')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'all' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>All events</button>
+              <button type="button" onClick={() => setScaleEventFilter('active')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'active' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Active only</button>
+              <button type="button" onClick={() => setScaleEventFilter('failed')} className={`rounded-xl px-4 py-2 text-sm ${scaleEventFilter === 'failed' ? 'bg-sky-500 text-slate-950' : 'bg-slate-800 text-slate-200'}`}>Failed only</button>
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-slate-400">
+                <input type="checkbox" checked={showArchivedScaleEvents} onChange={(event) => setShowArchivedScaleEvents(event.target.checked)} />
+                Show archived events
+              </label>
+              {adminRole === 'super_admin' ? (
+                <button type="button" onClick={() => void archiveStaleFailedNoise()} className="rounded-xl border border-slate-600 px-4 py-2 text-sm text-slate-300">Archive stale failed noise</button>
+              ) : null}
+            </div>
+          </div>
+
+          {visibleScaleEvents.filter((event) => event.status === 'failed').length ? (
+            <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-5">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-rose-200">Scale events needing attention</h3>
+                <p className="text-sm text-slate-500">Retry or archive failures after reviewing the latest provisioning attempt.</p>
+              </div>
+              <table className="min-w-full text-left text-sm text-slate-300">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="pb-3">Reason</th>
+                    <th className="pb-3">Created</th>
+                    <th className="pb-3">Failure</th>
+                    <th className="pb-3">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleScaleEvents.filter((event) => event.status === 'failed').map((event) => (
+                    <tr key={event.id} className="border-t border-rose-500/10 align-top">
+                      <td className="py-3">{event.triggerReason}</td>
+                      <td className="py-3">{new Date(event.createdAt).toLocaleString()}</td>
+                      <td className="py-3">
+                        <div>{event.failedReason ?? '—'}</div>
+                        {event.latestProvisionAttempt ? (
+                          <div className="mt-2 space-y-2 text-xs text-slate-500">
+                            <div className="flex flex-wrap gap-2">
+                              <span className={`rounded-full px-2 py-1 ${getAttemptStatusStyle(event.latestProvisionAttempt.status)}`}>Attempt {event.latestProvisionAttempt.status}</span>
+                              <span className={`rounded-full px-2 py-1 ${getCleanupStatusStyle(event.latestProvisionAttempt.cleanupStatus)}`}>Cleanup {event.latestProvisionAttempt.cleanupStatus}</span>
+                            </div>
+                            <div>Last update: {formatTime(event.latestProvisionAttempt.finishedAt ?? event.latestProvisionAttempt.createdAt ?? null)}</div>
+                            {event.latestProvisionAttempt.failureReason ? <div>Attempt error: {event.latestProvisionAttempt.failureReason}</div> : null}
+                          </div>
+                        ) : null}
+                      </td>
+                      <td className="py-3">
+                        {adminRole === 'super_admin' ? (
+                          <button type="button" onClick={() => void retryScaleEvent(event.id)} className="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-300">
+                            Retry
+                          </button>
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : null}
-          <table className="min-w-full text-left text-sm text-slate-300">
-            <thead className="text-slate-500">
-              <tr>
-                <th className="pb-3">Reason</th>
-                <th className="pb-3">Status</th>
-                <th className="pb-3">Created</th>
-                <th className="pb-3">Error</th>
-                <th className="pb-3">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {scaleEvents.map((event) => (
-                <tr key={event.id} className="border-t border-slate-800 align-top">
-                  <td className="py-3">{event.triggerReason}</td>
-                  <td className="py-3">{event.status}</td>
-                  <td className="py-3">{new Date(event.createdAt).toLocaleString()}</td>
-                  <td className="py-3">
-                    <div>{event.failedReason ?? '—'}</div>
-                    {event.latestProvisionAttempt ? (
-                      <div className="mt-2 text-xs text-slate-500">
-                        <div>Attempt: {event.latestProvisionAttempt.status}</div>
-                        <div>Cleanup: {event.latestProvisionAttempt.cleanupStatus}</div>
-                        {event.latestProvisionAttempt.failureReason ? <div>Attempt error: {event.latestProvisionAttempt.failureReason}</div> : null}
-                      </div>
-                    ) : null}
-                  </td>
-                  <td className="py-3">
-                    {adminRole === 'super_admin' && event.status === 'failed' ? (
-                      <button type="button" onClick={() => void retryScaleEvent(event.id)} className="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-300">
-                        Retry
-                      </button>
-                    ) : (
-                      <span className="text-slate-600">—</span>
-                    )}
-                  </td>
+
+          <div>
+            <h3 className="mb-3 text-lg font-semibold text-slate-100">Recent scale activity</h3>
+            <table className="min-w-full text-left text-sm text-slate-300">
+              <thead className="text-slate-500">
+                <tr>
+                  <th className="pb-3">Reason</th>
+                  <th className="pb-3">Status</th>
+                  <th className="pb-3">Created</th>
+                  <th className="pb-3">Error</th>
+                  <th className="pb-3">Action</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {visibleScaleEvents.map((event) => (
+                  <tr key={event.id} className="border-t border-slate-800 align-top">
+                    <td className="py-3">{event.triggerReason}</td>
+                    <td className="py-3">{event.status}</td>
+                    <td className="py-3">{new Date(event.createdAt).toLocaleString()}</td>
+                    <td className="py-3">
+                      <div>{event.failedReason ?? '—'}</div>
+                      {event.latestProvisionAttempt ? (
+                        <div className="mt-2 space-y-2 text-xs text-slate-500">
+                          <div className="flex flex-wrap gap-2">
+                            <span className={`rounded-full px-2 py-1 ${getAttemptStatusStyle(event.latestProvisionAttempt.status)}`}>Attempt {event.latestProvisionAttempt.status}</span>
+                            <span className={`rounded-full px-2 py-1 ${getCleanupStatusStyle(event.latestProvisionAttempt.cleanupStatus)}`}>Cleanup {event.latestProvisionAttempt.cleanupStatus}</span>
+                          </div>
+                          <div>Last update: {formatTime(event.latestProvisionAttempt.finishedAt ?? event.latestProvisionAttempt.createdAt ?? null)}</div>
+                          {event.latestProvisionAttempt.failureReason ? <div>Attempt error: {event.latestProvisionAttempt.failureReason}</div> : null}
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="py-3">
+                      {adminRole === 'super_admin' && event.status === 'failed' ? (
+                        <button type="button" onClick={() => void retryScaleEvent(event.id)} className="rounded-lg border border-sky-500/40 px-3 py-2 text-xs text-sky-300">
+                          Retry
+                        </button>
+                      ) : (
+                        <span className="text-slate-600">—</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       ) : null}
 

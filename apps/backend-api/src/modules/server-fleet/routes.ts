@@ -21,8 +21,14 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
   app.get(
     '/admin/servers',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin', 'provisioning_admin'])] },
-    async () => {
-      const rows = await db.select().from(hostServers).where(isNull(hostServers.archivedAt)).orderBy(desc(hostServers.createdAt));
+    async (request) => {
+      const query = z.object({ includeArchived: z.coerce.boolean().optional() }).safeParse(request.query);
+      const includeArchived = query.success ? query.data.includeArchived === true : false;
+      const rows = await db
+        .select()
+        .from(hostServers)
+        .where(includeArchived ? undefined : isNull(hostServers.archivedAt))
+        .orderBy(desc(hostServers.createdAt));
 
       const hydrated = await Promise.all(
         rows.map(async (host) => {
@@ -435,11 +441,13 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
   app.get(
     '/admin/scale-events',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin', 'provisioning_admin'])] },
-    async () => {
+    async (request) => {
+      const query = z.object({ includeArchived: z.coerce.boolean().optional() }).safeParse(request.query);
+      const includeArchived = query.success ? query.data.includeArchived === true : false;
       const events = await db
         .select()
         .from(serverScaleEvents)
-        .where(isNull(serverScaleEvents.archivedAt))
+        .where(includeArchived ? undefined : isNull(serverScaleEvents.archivedAt))
         .orderBy(desc(serverScaleEvents.createdAt));
 
       return Promise.all(

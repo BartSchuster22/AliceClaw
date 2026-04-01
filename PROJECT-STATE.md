@@ -28,16 +28,15 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
   - cleaned legacy orphaned pre-attempt provisioning rows once and fenced them off from future recovery logic
   - fixed worker dev flow so the worker container no longer reruns install-on-start after a proper `docker compose up -d --force-recreate worker`
   - improved admin server-fleet observability: `/admin/servers`, `/admin/servers/:id`, and `/admin/scale-events` now expose provisioning-attempt context; frontend admin Server Fleet page now shows latest attempt status, cleanup result, failure reason, and worker run detail
-  - added admin retry for failed provisioning: `POST /admin/scale-events/:id/retry` creates a fresh retry scale-event, preserves old failed history, and was verified to produce a new ready host from a previously failed event
-  - added operational cleanup/archive support: `host_servers.archived_at` and `server_scale_events.archived_at` (migration `0006_archive-hosts-and-scale-events`), archive host action, bulk archive of stale failed noise, and default admin views now hide archived records while preserving history
-  - added true queued host retirement/decommission flow: `POST /admin/servers/:id/retire` now validates host state/no active containers, enqueues worker-side provider cleanup, and archives the retired host out of active fleet views; verified against failed host `89c15cc8-4b0f-4ac2-8f5b-7b1f03722a39`
+  - added admin retry for failed provisioning, operational cleanup/archive support, and queued host retirement/decommission flow
+  - broader fleet UX polish completed this pass: summary cards, active-vs-attention separation, failed scale-event attention section, fleet/scale-event filters, archived-history toggles, richer attempt/cleanup badges, and timestamp polish
 - Remaining caveat: legacy pre-attempt historical rows remain old test artifacts; going forward `host_provision_attempts` is the authoritative recovery model.
 
 ## Next exact step
 
-- Reliability/admin lifecycle pass is checkpointed here.
-- Next likely operational improvement: broader fleet UX polish (clearer separation of active vs archived history, richer attempt/scale-event filtering) or intentionally resume real provider / real email / real Stripe follow-ups.
-- If staying in fleet operations, prioritize operator clarity over new background complexity.
+- Fleet UX polish is checkpointed here.
+- Next likely UI improvements: empty states, filter counters, and maybe archived-history specific subviews if operators need more clarity.
+- After that, either continue polish or intentionally resume broader integration work.
 
 ## Rules for this file
 
