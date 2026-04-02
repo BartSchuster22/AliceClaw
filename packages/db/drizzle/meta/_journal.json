@@ -50,6 +50,13 @@
       "when": 1775073000000,
       "tag": "0006_archive-hosts-and-scale-events",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1775160000000,
+      "tag": "0007_provider-action-tracking",
+      "breakpoints": true
     }
   ]
 }

@@ -396,6 +396,8 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                           </div>
                           <p className="mt-2">Last update: <span className="text-slate-200">{formatTime(host.latestProvisionAttempt.finishedAt ?? host.latestProvisionAttempt.createdAt ?? null)}</span></p>
                           <p>Failure: <span className="text-slate-200">{host.latestProvisionAttempt.failureReason ?? '—'}</span></p>
+                          <p>Provider action: <span className="text-slate-200">{host.latestProvisionAttempt.providerActionCommand ?? '—'}</span></p>
+                          <p>Action status: <span className="text-slate-200">{host.latestProvisionAttempt.providerActionStatus ?? '—'}</span></p>
                         </div>
                       ) : null}
                     </div>
@@ -484,6 +486,11 @@ export function ServerFleetSection({ adminRole }: { adminRole: AdminRole }) {
                         <p>Worker run: <span className="text-slate-200">{attempt.workerRunId ?? '—'}</span></p>
                         <p>Started: <span className="text-slate-200">{formatTime(attempt.startedAt)}</span></p>
                         <p>Finished: <span className="text-slate-200">{formatTime(attempt.finishedAt)}</span></p>
+                        <p>Provider action: <span className="text-slate-200">{attempt.providerActionCommand ?? '—'}</span></p>
+                        <p>Action id: <span className="text-slate-200">{attempt.providerActionId ?? '—'}</span></p>
+                        <p>Action status: <span className="text-slate-200">{attempt.providerActionStatus ?? '—'}</span></p>
+                        <p>Action started: <span className="text-slate-200">{formatTime(attempt.providerActionStartedAt)}</span></p>
+                        <p>Action finished: <span className="text-slate-200">{formatTime(attempt.providerActionFinishedAt)}</span></p>
                         <p>Failure: <span className="text-slate-200">{attempt.failureReason ?? '—'}</span></p>
                       </div>
                     ))}

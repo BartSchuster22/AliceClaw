@@ -24,6 +24,35 @@ function mapHetznerStatus(status: string | undefined): HostServerDetails['lifecy
 }
 
 export class HetznerHostServerProvider implements HostServerProvider {
+  private getToken() {
+    const token = process.env.HETZNER_API_TOKEN;
+    if (!token) {
+      throw new Error('HETZNER_API_TOKEN is required');
+    }
+    return token;
+  }
+
+  private getBaseUrl() {
+    return process.env.HETZNER_API_URL ?? 'https://api.hetzner.cloud/v1';
+  }
+
+  private async request(path: string, init?: RequestInit) {
+    const response = await fetch(`${this.getBaseUrl()}${path}`, {
+      ...init,
+      headers: {
+        authorization: `Bearer ${this.getToken()}`,
+        'content-type': 'application/json',
+        ...(init?.headers ?? {}),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Hetzner API request failed: ${response.status} ${await response.text()}`);
+    }
+
+    return response.json();
+  }
+
   private buildKeyName(publicKey: string, prefix = 'psi-host-key') {
     const suffix = createHash('sha256').update(publicKey).digest('hex').slice(0, 12);
     return `${prefix}-${suffix}`;
@@ -69,35 +98,6 @@ export class HetznerHostServerProvider implements HostServerProvider {
     return resolved;
   }
 
-  private getToken() {
-    const token = process.env.HETZNER_API_TOKEN;
-    if (!token) {
-      throw new Error('HETZNER_API_TOKEN is required');
-    }
-    return token;
-  }
-
-  private getBaseUrl() {
-    return process.env.HETZNER_API_URL ?? 'https://api.hetzner.cloud/v1';
-  }
-
-  private async request(path: string, init?: RequestInit) {
-    const response = await fetch(`${this.getBaseUrl()}${path}`, {
-      ...init,
-      headers: {
-        authorization: `Bearer ${this.getToken()}`,
-        'content-type': 'application/json',
-        ...(init?.headers ?? {}),
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Hetzner API request failed: ${response.status} ${await response.text()}`);
-    }
-
-    return response.json();
-  }
-
   async provisionHostServer(params: {
     name: string;
     instanceType: string;
@@ -136,6 +136,15 @@ export class HetznerHostServerProvider implements HostServerProvider {
         datacenter: server.datacenter?.name ?? null,
         labels: server.labels ?? null,
       },
+      action: payload.action
+        ? {
+            id: String(payload.action.id),
+            command: payload.action.command ?? undefined,
+            status: payload.action.status ?? null,
+            startedAt: payload.action.started ?? null,
+            finishedAt: payload.action.finished ?? null,
+          }
+        : null,
     };
   }
 
@@ -155,6 +164,7 @@ export class HetznerHostServerProvider implements HostServerProvider {
           datacenter: server.datacenter?.name ?? null,
           labels: server.labels ?? null,
         },
+        action: null,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -165,6 +175,7 @@ export class HetznerHostServerProvider implements HostServerProvider {
           lifecycleStatus: 'deleted',
           ipAddress: null,
           rawStatus: 'not_found',
+          action: null,
         };
       }
       throw error;
@@ -178,13 +189,21 @@ export class HetznerHostServerProvider implements HostServerProvider {
       });
       return {
         accepted: true,
-        actionId: payload.action?.id ? String(payload.action.id) : undefined,
         rawStatus: payload.action?.status ?? null,
+        action: payload.action
+          ? {
+              id: String(payload.action.id),
+              command: payload.action.command ?? undefined,
+              status: payload.action.status ?? null,
+              startedAt: payload.action.started ?? null,
+              finishedAt: payload.action.finished ?? null,
+            }
+          : null,
       };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (message.includes('404')) {
-        return { accepted: true, alreadyMissing: true, rawStatus: 'not_found' };
+        return { accepted: true, alreadyMissing: true, rawStatus: 'not_found', action: null };
       }
       throw error;
     }

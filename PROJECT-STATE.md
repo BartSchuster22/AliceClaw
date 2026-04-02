@@ -19,20 +19,19 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
   - upgraded mock host provider for scenario-driven provisioning robustness testing
   - added admin retry, archive, and queued retire flows plus broader fleet UX polish (summary cards, filters, archived toggles, attempt badges, counters, empty states)
 - Real provider boundary hardening completed in this pass:
-  - replaced the old minimal host-provider contract with richer `HostServerDetails` and explicit lifecycle/existence semantics
-  - added provider-owned SSH key resolution/import (`ensureSshKeyRefs`) so PSI no longer assumes raw public keys can be passed directly to all providers
-  - refined delete semantics to model async provider acceptance rather than pretending immediate final deletion
+  - replaced the old minimal host-provider contract with richer `HostServerDetails`, explicit lifecycle/existence semantics, provider-owned SSH key resolution/import, and async delete semantics
   - adapted PSI provisioning and retire flows to the stronger provider contract
   - upgraded mock provider to the stronger contract
-  - added first real Hetzner adapter scaffold (`apps/worker/src/providers/hetzner-host-server-provider.ts`) with create/details/delete methods, conservative status mapping, SSH-key import/reuse logic, and richer provider metadata
+  - added first real Hetzner adapter scaffold (`apps/worker/src/providers/hetzner-host-server-provider.ts`) with create/details/delete methods, SSH-key import/reuse logic, conservative status mapping, and richer provider metadata
   - provider selection now supports `HOST_SERVER_PROVIDER=mock|hetzner`
-- Remaining caveat: Hetzner adapter is a scaffolded real-provider boundary, not yet live-tested against the actual Hetzner API. Exact full status-enum coverage and potential action-tracking are still future hardening items.
+  - implemented provider-action tracking end-to-end: contract supports action metadata, `host_provision_attempts` and `host_servers` persist provider action id/command/status/timestamps (migration `0007_provider-action-tracking`), and admin fleet UI now surfaces provider action context on hosts/attempts/scale events
+- Remaining caveat: Hetzner adapter is still scaffolded and doc-aligned, not yet live-tested against real Hetzner credentials/resources. Exact status-enum coverage and any future action-reconciliation loop are still possible next hardening items.
 
 ## Next exact step
 
-- Provider-contract/Hetzner scaffolding pass is checkpointed here.
-- Next likely move: decide whether to continue real-provider hardening (for example action tracking / richer async provider reconciliation) or prepare the first intentional live Hetzner smoke-test path.
-- If staying conservative, do one more Hetzner-doc alignment pass before any live credentials are used.
+- Provider-contract/action-tracking pass is checkpointed here.
+- Next likely move: decide whether to continue real-provider hardening (for example action reconciliation loops / live Hetzner smoke-test preparation) or pause and resume later from this stronger provider boundary.
+- If staying conservative, prepare the first intentional live Hetzner smoke-test path before using real credentials.
 
 ## Rules for this file
 

@@ -1,5 +1,13 @@
 export type HostProviderLifecycleStatus = 'creating' | 'starting' | 'running' | 'deleting' | 'deleted' | 'error' | 'unknown';
 
+export type ProviderActionInfo = {
+  id?: string;
+  command?: string;
+  status?: string | null;
+  startedAt?: string | null;
+  finishedAt?: string | null;
+};
+
 export type HostServerDetails = {
   providerId: string;
   exists: boolean;
@@ -7,6 +15,7 @@ export type HostServerDetails = {
   ipAddress: string | null;
   rawStatus?: string | null;
   providerMetadata?: Record<string, unknown>;
+  action?: ProviderActionInfo | null;
 };
 
 export type ProviderSshKeyRef = {
@@ -18,8 +27,8 @@ export type ProviderSshKeyRef = {
 export type HostServerDeleteResult = {
   accepted: boolean;
   alreadyMissing?: boolean;
-  actionId?: string;
   rawStatus?: string | null;
+  action?: ProviderActionInfo | null;
 };
 
 export interface HostServerProvider {
