@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 
-import type { HostServerProvider } from './host-server-provider.js';
+import type { HostServerDetails, HostServerProvider } from './host-server-provider.js';
 
 type MockProviderMode = 'success' | 'fail_provision' | 'error_on_status' | 'stuck_starting' | 'fail_delete';
 
@@ -67,7 +67,15 @@ function log(message: string, payload?: Record<string, unknown>) {
 }
 
 export class MockHostServerProvider implements HostServerProvider {
-  async provisionHostServer(): Promise<{ providerId: string; ipAddress: string }> {
+  async ensureSshKeyRefs(params: { sshPublicKeys: string[]; keyNamePrefix?: string }) {
+    return params.sshPublicKeys.map((publicKey, index) => ({
+      id: `mock-key-${index + 1}`,
+      name: `${params.keyNamePrefix ?? 'mock-key'}-${index + 1}`,
+      publicKey,
+    }));
+  }
+
+  async provisionHostServer(): Promise<HostServerDetails> {
     const mode = getMode();
     await delay(getProvisionDelayMs());
 
@@ -89,44 +97,82 @@ export class MockHostServerProvider implements HostServerProvider {
 
     return {
       providerId,
+      exists: true,
+      lifecycleStatus: 'creating',
       ipAddress,
+      rawStatus: 'mock:creating',
+      providerMetadata: { mode },
     };
   }
 
-  async getHostServerStatus(providerId: string): Promise<'starting' | 'running' | 'error'> {
+  async getHostServerDetails(providerId: string): Promise<HostServerDetails> {
     const record = hostRecords.get(providerId);
     if (!record || record.deleted) {
-      log('status requested for unknown/deleted host', { providerId });
-      return 'error';
+      log('details requested for unknown/deleted host', { providerId });
+      return {
+        providerId,
+        exists: false,
+        lifecycleStatus: 'deleted',
+        ipAddress: null,
+        rawStatus: 'mock:deleted',
+      };
     }
 
     record.statusCalls += 1;
     hostRecords.set(providerId, record);
 
     if (record.mode === 'error_on_status' && record.statusCalls >= getReadyAfterCalls()) {
-      log('forced provider error on status', { providerId, statusCalls: record.statusCalls });
-      return 'error';
+      log('forced provider error on details', { providerId, statusCalls: record.statusCalls });
+      return {
+        providerId,
+        exists: true,
+        lifecycleStatus: 'error',
+        ipAddress: record.ipAddress,
+        rawStatus: 'mock:error',
+        providerMetadata: { statusCalls: record.statusCalls },
+      };
     }
 
     if (record.mode === 'stuck_starting') {
       log('stuck in starting state', { providerId, statusCalls: record.statusCalls });
-      return 'starting';
+      return {
+        providerId,
+        exists: true,
+        lifecycleStatus: 'starting',
+        ipAddress: record.ipAddress,
+        rawStatus: 'mock:starting',
+        providerMetadata: { statusCalls: record.statusCalls },
+      };
     }
 
     if (record.statusCalls < getReadyAfterCalls()) {
       log('still starting', { providerId, statusCalls: record.statusCalls });
-      return 'starting';
+      return {
+        providerId,
+        exists: true,
+        lifecycleStatus: 'starting',
+        ipAddress: record.ipAddress,
+        rawStatus: 'mock:starting',
+        providerMetadata: { statusCalls: record.statusCalls },
+      };
     }
 
     log('host reached running state', { providerId, statusCalls: record.statusCalls });
-    return 'running';
+    return {
+      providerId,
+      exists: true,
+      lifecycleStatus: 'running',
+      ipAddress: record.ipAddress,
+      rawStatus: 'mock:running',
+      providerMetadata: { statusCalls: record.statusCalls },
+    };
   }
 
-  async deleteHostServer(providerId: string): Promise<void> {
+  async deleteHostServer(providerId: string) {
     const record = hostRecords.get(providerId);
     if (!record) {
       log('delete requested for unknown host', { providerId });
-      return;
+      return { accepted: true, alreadyMissing: true, rawStatus: 'mock:missing' };
     }
 
     if (record.mode === 'fail_delete') {
@@ -137,5 +183,6 @@ export class MockHostServerProvider implements HostServerProvider {
     record.deleted = true;
     hostRecords.set(providerId, record);
     log('deleted mock host', { providerId });
+    return { accepted: true, rawStatus: 'mock:deleted' };
   }
 }

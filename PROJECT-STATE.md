@@ -10,33 +10,29 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
 ## Current active project
 
 - Project: PSI platform
-- Current focus: shared-host runtime stabilization, provisioning reliability, and admin operational polish.
-- Current status: referral flow was verified from live local data. Admin referral routes respond correctly. Deferred live Stripe credit remains intentionally unimplemented, but referral state no longer falsely auto-applies in live-Stripe-deferred mode.
-- Shared-host stabilization already completed before the latest pass:
-  - fixed dev user-login drift by reseeding `user@openclaw.local`
-  - fixed `/user/subscriptions` runtime path and restored live `container_instances` joins after migration `0003`
-  - hardened backend and worker notification paths so missing Postmark config skips email cleanly in local/dev
-  - applied DB migration `0003_shared-host-runtime-foundations`
-  - bootstrapped active product definitions, server template, and ready dev host data
-  - cleaned stale queued VPS-era provisioning jobs
-  - fixed deploy worker bugs, added user delete route, cleaned stopped/deleted payload semantics, and verified lifecycle coverage (deploy -> visibility -> stop -> start -> health-check -> delete)
-- Provisioning reliability/admin work now completed and checkpointed:
-  - upgraded mock host provider with scenario-driven testing via `.openclaw/mock-host-provider.json` (`success`, `fail_provision`, `error_on_status`, `stuck_starting`, `fail_delete`) plus delay/readiness knobs
-  - fixed same-run mid-provision failure cleanup so created host rows become `failed` and provider cleanup is attempted best-effort
-  - implemented `host_provision_attempts` with heartbeat, cleanup status, worker-run ownership, and startup reconciliation (migrations `0004_host-provision-attempts` and `0005_host-provision-attempt-worker-run-id`)
-  - verified fresh fail/success behavior under the attempt model and verified interrupted attempts from older worker runs are reconciled to failed on startup
-  - cleaned legacy orphaned pre-attempt provisioning rows once and fenced them off from future recovery logic
-  - fixed worker dev flow so the worker container no longer reruns install-on-start after a proper `docker compose up -d --force-recreate worker`
-  - improved admin server-fleet observability: `/admin/servers`, `/admin/servers/:id`, and `/admin/scale-events` now expose provisioning-attempt context; frontend admin Server Fleet page now shows latest attempt status, cleanup result, failure reason, and worker run detail
-  - added admin retry for failed provisioning, operational cleanup/archive support, and queued host retirement/decommission flow
-  - broader fleet UX polish completed this pass: summary cards, active-vs-attention separation, failed scale-event attention section, fleet/scale-event filters, archived-history toggles, richer attempt/cleanup badges, and timestamp polish
-- Remaining caveat: legacy pre-attempt historical rows remain old test artifacts; going forward `host_provision_attempts` is the authoritative recovery model.
+- Current focus: real provider integration prep after stabilizing the shared-host runtime and fleet operations.
+- Current status: internal shared-host runtime stabilization and admin operational polish are in strong shape. Referral flow remains verified; deferred live Stripe credit is still intentionally not implemented. Worker/runtime/admin lifecycle now supports provision, retry, archive, retire, and much better recovery semantics.
+- Shared-host stabilization and reliability work completed before this pass:
+  - fixed `/user/subscriptions` runtime path, restored live `container_instances` joins after migration `0003`, and verified lifecycle coverage (deploy -> visibility -> stop -> start -> health-check -> delete)
+  - hardened backend/worker notification fallbacks for missing Postmark config
+  - implemented `host_provision_attempts` with heartbeat, cleanup status, worker-run ownership, and startup reconciliation (`0004`, `0005` migrations)
+  - upgraded mock host provider for scenario-driven provisioning robustness testing
+  - added admin retry, archive, and queued retire flows plus broader fleet UX polish (summary cards, filters, archived toggles, attempt badges, counters, empty states)
+- Real provider boundary hardening completed in this pass:
+  - replaced the old minimal host-provider contract with richer `HostServerDetails` and explicit lifecycle/existence semantics
+  - added provider-owned SSH key resolution/import (`ensureSshKeyRefs`) so PSI no longer assumes raw public keys can be passed directly to all providers
+  - refined delete semantics to model async provider acceptance rather than pretending immediate final deletion
+  - adapted PSI provisioning and retire flows to the stronger provider contract
+  - upgraded mock provider to the stronger contract
+  - added first real Hetzner adapter scaffold (`apps/worker/src/providers/hetzner-host-server-provider.ts`) with create/details/delete methods, conservative status mapping, SSH-key import/reuse logic, and richer provider metadata
+  - provider selection now supports `HOST_SERVER_PROVIDER=mock|hetzner`
+- Remaining caveat: Hetzner adapter is a scaffolded real-provider boundary, not yet live-tested against the actual Hetzner API. Exact full status-enum coverage and potential action-tracking are still future hardening items.
 
 ## Next exact step
 
-- Fleet UX polish is checkpointed here.
-- Next likely UI improvements: empty states, filter counters, and maybe archived-history specific subviews if operators need more clarity.
-- After that, either continue polish or intentionally resume broader integration work.
+- Provider-contract/Hetzner scaffolding pass is checkpointed here.
+- Next likely move: decide whether to continue real-provider hardening (for example action tracking / richer async provider reconciliation) or prepare the first intentional live Hetzner smoke-test path.
+- If staying conservative, do one more Hetzner-doc alignment pass before any live credentials are used.
 
 ## Rules for this file
 
@@ -50,6 +46,6 @@ Do not paste raw logs here. Do not duplicate full schema/reference material here
 
 ## Critical cautions
 
-- Do not mix unrelated product/UI work into provisioning-reliability changes.
-- Keep logs summarized, not pasted.
-- For provisioning recovery bugs, distinguish legacy pre-attempt artifacts from new attempt-model behavior before patching further.
+- Do not bypass the provider boundary by importing worker-only provider internals into backend routes.
+- For real-provider work, prefer correctness and explicit semantics over minimal-effort shortcuts.
+- Keep mock/testing assumptions clearly separated from real-provider assumptions.

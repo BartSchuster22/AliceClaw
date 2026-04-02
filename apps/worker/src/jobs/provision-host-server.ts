@@ -209,6 +209,11 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
         prePullImages,
       });
 
+      const sshKeyRefs = await hostServerProvider.ensureSshKeyRefs({
+        sshPublicKeys,
+        keyNamePrefix: 'psi-host-key',
+      });
+
       let createdHostRecordId: string | null = null;
       let createdProviderId: string | null = null;
 
@@ -228,7 +233,7 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
           name: serverName,
           instanceType: activeTemplate.instanceType,
           region: activeTemplate.region,
-          sshPublicKeys,
+          sshKeyRefs,
           cloudInitScript,
         });
 
@@ -284,15 +289,28 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
           })
           .where(eq(hostProvisionAttempts.id, attempt.id));
 
-        let providerStatus: 'starting' | 'running' | 'error' = 'starting';
+        let providerStatus: 'creating' | 'starting' | 'running' | 'deleting' | 'deleted' | 'error' | 'unknown' = 'creating';
         for (let pollAttempt = 1; pollAttempt <= getStatusPollMaxAttempts(); pollAttempt += 1) {
           await heartbeatAttempt(attempt.id, workerRunId);
-          providerStatus = await hostServerProvider.getHostServerStatus(created.providerId);
+          const providerDetails = await hostServerProvider.getHostServerDetails(created.providerId);
+          providerStatus = providerDetails.lifecycleStatus;
+
+          if (!providerDetails.exists || providerStatus === 'deleted') {
+            throw new Error('Host provider reported server missing during provisioning');
+          }
+
+          if (providerDetails.ipAddress && providerDetails.ipAddress !== host.ipAddress) {
+            await db
+              .update(hostServers)
+              .set({ ipAddress: providerDetails.ipAddress })
+              .where(eq(hostServers.id, host.id));
+          }
+
           if (providerStatus === 'running') {
             break;
           }
-          if (providerStatus === 'error') {
-            throw new Error('Host provider returned error state');
+          if (providerStatus === 'error' || providerStatus === 'unknown' || providerStatus === 'deleting') {
+            throw new Error(`Host provider returned terminal state: ${providerStatus}`);
           }
           await sleep(getStatusPollIntervalMs());
         }
