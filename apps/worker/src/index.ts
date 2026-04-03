@@ -5,6 +5,7 @@ import { createDeployContainerWorker } from './jobs/deploy-container.js';
 import { createHealthCheckContainersWorker, registerHealthCheckContainersJob } from './jobs/health-check-containers.js';
 import { createProvisionHostServerWorker, reconcileStaleHostProvisionAttempts } from './jobs/provision-host-server.js';
 import { createProvisionInstanceWorker } from './jobs/provision-instance.js';
+import { createRefreshHostProviderStateWorker } from './jobs/refresh-host-provider-state.js';
 import { createRetireHostServerWorker } from './jobs/retire-host-server.js';
 import { createVestReferralRewardWorker } from './jobs/vest-referral-reward.js';
 
@@ -17,6 +18,7 @@ await registerHealthCheckContainersJob();
 
 const containerLifecycleWorkers = createContainerLifecycleWorkers();
 const retireHostServerWorker = createRetireHostServerWorker();
+const refreshHostProviderStateWorker = createRefreshHostProviderStateWorker();
 
 const workerRuntimes = [
   createDeployContainerWorker(),
@@ -25,6 +27,7 @@ const workerRuntimes = [
   createProvisionInstanceWorker(),
   createVestReferralRewardWorker(),
   retireHostServerWorker,
+  refreshHostProviderStateWorker,
   {
     worker: containerLifecycleWorkers.stopWorker,
     close: containerLifecycleWorkers.close,

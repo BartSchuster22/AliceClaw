@@ -6,6 +6,8 @@ import { db } from '@psi/db';
 import { hostProvisionAttempts, hostServers, serverScaleEvents, serverTemplates } from '@psi/db/schema';
 
 import { closeRedisConnection, createRedisConnection } from '../lib/redis.js';
+import { runSingleProviderProvisionAttempt } from '../provisioning/execution/host-provision-attempt-runner.js';
+import { buildSingleCandidateHostProvisionPlan } from '../provisioning/plan/host-placement-planner.js';
 import { getHostServerProvider } from '../providers/index.js';
 
 export type ProvisionHostServerJobPayload = {
@@ -17,34 +19,8 @@ export type ProvisionHostServerWorkerRuntime = {
   close: () => Promise<void>;
 };
 
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function getStatusPollIntervalMs() {
-  return Number(process.env.HOST_PROVIDER_STATUS_POLL_INTERVAL_MS ?? 10_000);
-}
-
-function getStatusPollMaxAttempts() {
-  return Number(process.env.HOST_PROVIDER_STATUS_POLL_MAX_ATTEMPTS ?? 60);
-}
-
-function getReadyStabilizationDelayMs() {
-  return Number(process.env.HOST_PROVIDER_READY_STABILIZATION_DELAY_MS ?? 45_000);
-}
-
 function getProvisionAttemptStaleMs() {
   return Number(process.env.HOST_PROVISION_ATTEMPT_STALE_MS ?? 300_000);
-}
-
-async function heartbeatAttempt(attemptId: string, workerRunId: string) {
-  await db
-    .update(hostProvisionAttempts)
-    .set({
-      lastHeartbeatAt: new Date(),
-      workerRunId,
-    })
-    .where(eq(hostProvisionAttempts.id, attemptId));
 }
 
 export async function reconcileStaleHostProvisionAttempts(workerRunId: string) {
@@ -209,13 +185,20 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
         prePullImages,
       });
 
+      const plan = await buildSingleCandidateHostProvisionPlan({
+        scaleEventId: scaleEvent.id,
+        activeTemplate,
+      });
+
+      const primaryCandidate = plan.candidates[0];
+      if (!primaryCandidate) {
+        throw new Error('Provision plan produced no candidates');
+      }
+
       const sshKeyRefs = await hostServerProvider.ensureSshKeyRefs({
         sshPublicKeys,
         keyNamePrefix: 'psi-host-key',
       });
-
-      let createdHostRecordId: string | null = null;
-      let createdProviderId: string | null = null;
 
       const workerRunId = process.env.WORKER_RUN_ID ?? `worker-run-${process.pid}`;
 
@@ -229,169 +212,22 @@ export function createProvisionHostServerWorker(): ProvisionHostServerWorkerRunt
         .returning();
 
       try {
-        const created = await hostServerProvider.provisionHostServer({
-          name: serverName,
-          instanceType: activeTemplate.instanceType,
-          region: activeTemplate.region,
+        await runSingleProviderProvisionAttempt({
+          provider: hostServerProvider,
+          scaleEventId: scaleEvent.id,
+          attemptId: attempt.id,
+          workerRunId,
+          serverName,
+          activeTemplate: {
+            ...activeTemplate,
+            provider: primaryCandidate.provider,
+            region: primaryCandidate.region,
+            instanceType: primaryCandidate.instanceType,
+          },
           sshKeyRefs,
           cloudInitScript,
         });
-
-        createdProviderId = created.providerId;
-
-        await db
-          .update(hostProvisionAttempts)
-          .set({
-            providerInstanceId: created.providerId,
-            workerRunId,
-            lastHeartbeatAt: new Date(),
-          })
-          .where(eq(hostProvisionAttempts.id, attempt.id));
-
-        const reservedCpuMillicores = Math.floor(
-          activeTemplate.expectedCpuMillicores * (activeTemplate.managementOverheadPercent / 100),
-        );
-        const reservedMemoryMb = Math.floor(
-          activeTemplate.expectedMemoryMb * (activeTemplate.managementOverheadPercent / 100),
-        );
-        const reservedDiskGb = Math.floor(
-          activeTemplate.expectedDiskGb * (activeTemplate.managementOverheadPercent / 100),
-        );
-
-        const [host] = await db
-          .insert(hostServers)
-          .values({
-            name: serverName,
-            provider: activeTemplate.provider,
-            providerInstanceId: created.providerId,
-            region: activeTemplate.region,
-            ipAddress: created.ipAddress,
-            instanceType: activeTemplate.instanceType,
-            totalCpuMillicores: activeTemplate.expectedCpuMillicores,
-            totalMemoryMb: activeTemplate.expectedMemoryMb,
-            totalDiskGb: activeTemplate.expectedDiskGb,
-            reservedCpuMillicores,
-            reservedMemoryMb,
-            reservedDiskGb,
-            status: 'provisioning',
-            capacityThresholdPercent: activeTemplate.capacityThresholdPercent,
-          })
-          .returning();
-
-        createdHostRecordId = host.id;
-
-        await db
-          .update(hostProvisionAttempts)
-          .set({
-            hostServerId: host.id,
-            workerRunId,
-            lastHeartbeatAt: new Date(),
-          })
-          .where(eq(hostProvisionAttempts.id, attempt.id));
-
-        let providerStatus: 'creating' | 'starting' | 'running' | 'deleting' | 'deleted' | 'error' | 'unknown' = 'creating';
-        for (let pollAttempt = 1; pollAttempt <= getStatusPollMaxAttempts(); pollAttempt += 1) {
-          await heartbeatAttempt(attempt.id, workerRunId);
-          const providerDetails = await hostServerProvider.getHostServerDetails(created.providerId);
-          providerStatus = providerDetails.lifecycleStatus;
-
-          if (!providerDetails.exists || providerStatus === 'deleted') {
-            throw new Error('Host provider reported server missing during provisioning');
-          }
-
-          if (providerDetails.ipAddress && providerDetails.ipAddress !== host.ipAddress) {
-            await db
-              .update(hostServers)
-              .set({ ipAddress: providerDetails.ipAddress })
-              .where(eq(hostServers.id, host.id));
-          }
-
-          if (providerStatus === 'running') {
-            break;
-          }
-          if (providerStatus === 'error' || providerStatus === 'unknown' || providerStatus === 'deleting') {
-            throw new Error(`Host provider returned terminal state: ${providerStatus}`);
-          }
-          await sleep(getStatusPollIntervalMs());
-        }
-
-        if (providerStatus !== 'running') {
-          throw new Error('ProvisionTimeoutError');
-        }
-
-        await sleep(getReadyStabilizationDelayMs());
-
-        await db
-          .update(hostServers)
-          .set({
-            status: 'ready',
-            readyAt: new Date(),
-          })
-          .where(eq(hostServers.id, host.id));
-
-        await db
-          .update(serverScaleEvents)
-          .set({
-            newHostServerId: host.id,
-            status: 'ready',
-            completedAt: new Date(),
-          })
-          .where(eq(serverScaleEvents.id, scaleEvent.id));
-
-        await db
-          .update(hostProvisionAttempts)
-          .set({
-            status: 'completed',
-            cleanupStatus: 'not_required',
-            finishedAt: new Date(),
-            lastHeartbeatAt: new Date(),
-          })
-          .where(eq(hostProvisionAttempts.id, attempt.id));
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-
-        let cleanupStatus = 'not_started';
-
-        if (createdProviderId) {
-          cleanupStatus = 'in_progress';
-          try {
-            await hostServerProvider.deleteHostServer(createdProviderId);
-            cleanupStatus = 'completed';
-          } catch (cleanupError) {
-            cleanupStatus = 'failed';
-            console.error('[provision-host-server] cleanup failed', cleanupError);
-          }
-        }
-
-        if (createdHostRecordId) {
-          await db
-            .update(hostServers)
-            .set({
-              status: 'failed',
-              readyAt: null,
-            })
-            .where(eq(hostServers.id, createdHostRecordId));
-        }
-
-        await db
-          .update(serverScaleEvents)
-          .set({
-            status: 'failed',
-            failedReason: message,
-          })
-          .where(eq(serverScaleEvents.id, scaleEvent.id));
-
-        await db
-          .update(hostProvisionAttempts)
-          .set({
-            status: 'failed',
-            failureReason: message,
-            cleanupStatus,
-            finishedAt: new Date(),
-            lastHeartbeatAt: new Date(),
-          })
-          .where(eq(hostProvisionAttempts.id, attempt.id));
-
         throw error;
       }
     },

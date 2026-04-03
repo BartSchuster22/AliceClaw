@@ -40,6 +40,15 @@ export function createRetireHostServerWorker() {
         throw new Error('Host still has active containers');
       }
 
+      await db
+        .update(hostServers)
+        .set({
+          status: 'draining',
+          lastHeartbeatAt: null,
+          readyAt: null,
+        })
+        .where(eq(hostServers.id, host.id));
+
       let deleteResult: Awaited<ReturnType<typeof provider.deleteHostServer>> | null = null;
       if (host.providerInstanceId) {
         deleteResult = await provider.deleteHostServer(host.providerInstanceId);
@@ -48,8 +57,8 @@ export function createRetireHostServerWorker() {
       await db
         .update(hostServers)
         .set({
-          status: 'draining',
-          archivedAt: new Date(),
+          status: deleteResult?.alreadyMissing ? 'decommissioned' : 'draining',
+          archivedAt: deleteResult?.alreadyMissing ? new Date() : null,
           providerInstanceId: deleteResult?.alreadyMissing ? null : host.providerInstanceId,
           providerActionId: deleteResult?.action?.id ?? null,
           providerActionCommand: deleteResult?.action?.command ?? null,

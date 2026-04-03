@@ -5,7 +5,7 @@ import { z } from 'zod';
 import { requireAdmin, requireAdminRole } from '../../admin-auth.js';
 import { db } from '@psi/db';
 import { containerInstances, hostProvisionAttempts, hostServers, serverScaleEvents, serverTemplates } from '@psi/db/schema';
-import { enqueueProvisionHostServerJob, enqueueRetireHostServerJob } from '../../lib/queues.js';
+import { enqueueProvisionHostServerJob, enqueueRefreshHostProviderStateJob, enqueueRetireHostServerJob } from '../../lib/queues.js';
 
 const activeRuntimeStatuses = ['allocating', 'deploying', 'starting', 'running', 'unhealthy'] as const;
 
@@ -212,6 +212,34 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
   );
 
   app.post(
+    '/admin/servers/:id/refresh-provider-state',
+    { preHandler: [requireAdmin, requireAdminRole(['super_admin', 'provisioning_admin'])] },
+    async (request, reply) => {
+      const params = z.object({ id: z.string().uuid() }).safeParse(request.params);
+      if (!params.success) {
+        return reply.status(400).send({ error: 'Invalid host id' });
+      }
+
+      const [host] = await db.select().from(hostServers).where(eq(hostServers.id, params.data.id)).limit(1);
+      if (!host) {
+        return reply.status(404).send({ error: 'Host not found' });
+      }
+
+      if (host.archivedAt) {
+        return reply.status(409).send({ error: 'Archived hosts cannot be refreshed' });
+      }
+
+      if (!host.providerInstanceId) {
+        return reply.status(409).send({ error: 'Host has no provider instance id to refresh' });
+      }
+
+      await enqueueRefreshHostProviderStateJob({ hostServerId: host.id });
+
+      return { success: true, queued: true };
+    },
+  );
+
+  app.post(
     '/admin/servers/:id/retire',
     { preHandler: [requireAdmin, requireAdminRole(['super_admin'])] },
     async (request, reply) => {
@@ -225,8 +253,8 @@ export async function registerServerFleetRoutes(app: FastifyInstance) {
         return reply.status(404).send({ error: 'Host not found' });
       }
 
-      if (!['failed', 'draining'].includes(host.status)) {
-        return reply.status(409).send({ error: 'Only failed or draining hosts can be retired' });
+      if (!['ready', 'failed', 'draining', 'unreachable', 'decommissioned'].includes(host.status)) {
+        return reply.status(409).send({ error: 'Only idle ready/failed/draining/unreachable hosts can be retired' });
       }
 
       const [usage] = await db

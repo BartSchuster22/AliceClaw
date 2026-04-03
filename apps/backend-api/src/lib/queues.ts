@@ -37,3 +37,7 @@ export async function enqueueProvisionHostServerJob(payload: { scaleEventId: str
 export async function enqueueRetireHostServerJob(payload: { hostServerId: string }) {
   return withQueue('retire-host-server', (queue) => queue.add('retire-host-server', payload));
 }
+
+export async function enqueueRefreshHostProviderStateJob(payload: { hostServerId: string }) {
+  return withQueue('refresh-host-provider-state', (queue) => queue.add('refresh-host-provider-state', payload));
+}
